@@ -1,39 +1,74 @@
 # Architecture — TanyaHukum
 
-_First version. Refined as layers land (kept updated from Week 6 per the plan)._
+This project is designed as a clear, interview-friendly legal AI system: a small web app, a retrieval layer, and a resilient AI provider stack.
 
 ## Components
 
 | Layer | Where it lives | Notes |
 |---|---|---|
-| **app/** | Next.js + TypeScript — UI + API routes | The **only always-on host** (Vercel, Hobby/free). |
-| **pipeline/** | Python — fetch, ingest, evals | Runs **locally + GitHub Actions**, never hosted. |
-| **corpus/** | Raw PDFs + `sources.jsonl` manifest | Committed; public data (not copyrighted, UU 28/2014 Ps. 42). |
-| **prompts/** | Versioned system prompts | `system-v1.md` committed, not inline. |
-| **evals/** | `dataset.jsonl` + results | Ground truth human-verified against source docs. |
+| **app/** | Next.js + TypeScript — UI + API routes | Streaming chat UI and server route. |
+| **pipeline/** | Python — fetch, ingest, evals | Runs locally and in CI; not a production host. |
+| **corpus/** | Raw sources and manifests | Tracks public legal documents and source metadata. |
+| **prompts/** | Versioned system prompts | Keeps the system message in repo-controlled files. |
+| **evals/** | Data and grading scripts | Used to validate answer quality and stability. |
 
-## Request path (prod, from Week 10)
+## Current runtime flow
 
+```text
+Browser
+  -> Next.js app route
+  -> validate request payload
+  -> try Gemini first
+  -> fallback to OpenRouter
+  -> fallback to DeepSeek
+  -> stream tokens back in SSE
 ```
-Browser ──SSE──▶ Next.js API route (Vercel)
-                  ├── retrieve chunks from pgvector (Neon, free tier)
-                  ├── embed query (multilingual model)
-                  └── Gemini Flash streams the cited answer back
+
+This keeps the app resilient when one provider rate-limits or returns a model error.
+
+## AI provider policy
+
+The app intentionally uses a simple priority order for reliability and portfolio clarity:
+
+1. Gemini (`models/gemini-3.6-flash`)
+2. OpenRouter (`meta-llama/llama-3.3-70b-instruct`)
+3. DeepSeek (`deepseek-chat`)
+
+The route catches provider/model failures and tries the next provider automatically.
+
+## Request validation and safety controls
+
+The server route validates a JSON body shaped like:
+
+```json
+{
+  "messages": [{ "role": "user", "content": "Apa sanksi keterlambatan pelaporan?" }]
+}
 ```
 
-One hop → no cold starts, ~60s serverless cap is comfortable for streamed answers.
+It also:
 
-## Storage interface
+- rejects empty payloads
+- trims and validates message content
+- caps the message history to the last 20 messages
+- returns a clean 503 JSON error when every model fails
 
-Vector store behind one interface, swapped by env var:
+## Storage and retrieval direction
 
-- **dev:** Chroma (embedded, local)
-- **prod:** pgvector on Neon (free tier)
+The project is intended to evolve toward a retrieval-backed legal assistant:
 
-`VECTOR_STORE=chroma|pgvector`
+- local corpus of Indonesian legal documents
+- chunking and metadata extraction
+- retrieval for legal questions
+- grounded answer generation with citation support
 
-## Model providers (all OpenAI-compatible → one client abstraction)
+This is the natural next step after the Layer 1 app is stable.
 
-- **Generation:** `GEMINI_MODEL` / `DEEPSEEK_MODEL` switch by env
-- **Judge (evals):** DeepSeek — different provider than the generator → less judge bias
-- **Embeddings:** multilingual (corpus is Indonesian; queries in ID/EN)
+## Why this structure works
+
+The design keeps responsibilities clear:
+
+- app layer handles user interaction and streaming
+- model layer handles provider resilience
+- corpus and eval layers handle data quality and correctness
+- docs remain easy to explain in an interview and a GitHub README

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
+import { MarkdownMessage } from "../components/MarkdownMessage";
 import { useChat } from "../../hooks/useChat";
 
 export default function Home() {
@@ -18,7 +20,7 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto flex h-full w-full max-w-3xl flex-col px-4 py-6">
+    <main className="mx-auto flex h-full w-full max-w-5xl flex-col px-4 py-6">
       <header className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
@@ -28,6 +30,13 @@ export default function Home() {
             Ask Indonesian law. Every answer cites its source.
           </p>
         </div>
+
+        <Link
+          href="/project-doc"
+          className="rounded-full border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+        >
+          Project docs
+        </Link>
       </header>
 
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
@@ -37,18 +46,26 @@ export default function Home() {
           </div>
         )}
 
-        {messages.map((message, index) => (
-          <div
-            key={`${message.role}-${index}`}
-            className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2 text-sm leading-relaxed ${
-              message.role === "user"
-                ? "self-end bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "self-start bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-            }`}
-          >
-            {message.content || (isLoading && index === messages.length - 1 ? "…" : "")}
-          </div>
-        ))}
+        {messages.map((message, index) => {
+          const content = message.content || (isLoading && index === messages.length - 1 ? "…" : "");
+
+          return (
+            <div
+              key={`${message.role}-${index}`}
+              className={`max-w-[85%] rounded-2xl px-4 py-2 text-sm leading-relaxed ${
+                message.role === "user"
+                  ? "self-end bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                  : "self-start bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+              }`}
+            >
+              {message.role === "user" ? (
+                <div className="whitespace-pre-wrap">{content}</div>
+              ) : (
+                <MarkdownMessage content={content} className="text-sm leading-relaxed" />
+              )}
+            </div>
+          );
+        })}
 
         {error && (
           <button
