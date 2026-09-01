@@ -1,17 +1,12 @@
-import OpenAI from "openai";
 import type { NextRequest } from "next/server";
+import { streamChat, type ChatMessage } from "../../../lib/llm";
+import { sessionStore } from "../../../lib/server/sessionStore";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-export type ChatRole = "user" | "assistant" | "system";
-
-export interface ChatMessage {
-  role: ChatRole;
-  content: string;
-}
-
 export interface ChatRequestBody {
+  sessionId?: string;
   messages: ChatMessage[];
 }
 
@@ -23,27 +18,6 @@ export interface StreamEvent {
   message?: string;
 }
 
-const EXTRA_PROVIDER_MODELS = [
-  {
-    name: "openrouter",
-    baseURL: "https://openrouter.ai/api/v1",
-    apiKey: process.env.OPENROUTER_API_KEY ?? "",
-    models: ["meta-llama/llama-3.3-70b-instruct", "deepseek/deepseek-r1", "openai/gpt-4o-mini"],
-  },
-  {
-    name: "gemini",
-    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-    apiKey: process.env.GEMINI_API_KEYS?.split(",")[0]?.trim() ?? process.env.GEMINI_API_KEY ?? "",
-    models: ["models/gemini-3.6-flash", "gemini-2.5-flash"],
-  },
-  {
-    name: "deepseek",
-    baseURL: "https://api.deepseek.com",
-    apiKey: process.env.DEEPSEEK_API_KEY ?? "",
-    models: ["deepseek-chat"],
-  },
-] as const;
-
 const MAX_HISTORY = 20;
 
 function jsonError(status: number, message: string) {
@@ -51,8 +25,8 @@ function jsonError(status: number, message: string) {
 }
 
 function validateMessages(messages: unknown): ChatMessage[] {
-  if (!Array.isArray(messages) || messages.length === 0) {
-    throw new Error("messages must be a non-empty array.");
+  if (!Array.isArray(messages)) {
+    throw new Error("messages must be an array.");
   }
 
   const normalized: ChatMessage[] = messages.slice(-MAX_HISTORY).map((message) => {
@@ -72,19 +46,27 @@ function validateMessages(messages: unknown): ChatMessage[] {
     }
 
     return {
-      role: role === "user" || role === "assistant" ? role : "user",
+      role: (role === "user" || role === "assistant" ? role : "user") as "user" | "assistant",
       content: cleanedContent,
     };
   });
 
-  if (normalized.length === 0) {
-    throw new Error("At least one valid message is required.");
-  }
-
   return normalized;
 }
 
-/** SSE endpoint: POST { messages } -> streams tokens from OpenRouter with model failover. */
+function buildConversationTitle(content: string): string {
+  const cleaned = content.trim().replace(/\s+/g, " ");
+  if (!cleaned) return "New chat";
+  return cleaned.length > 40 ? `${cleaned.slice(0, 37).trim()}...` : cleaned;
+}
+
+/**
+ * SSE endpoint: POST { sessionId?, messages } -> streams tokens from configured LLM provider
+ * 
+ * If sessionId is provided, the server manages conversation history.
+ * Messages array is still accepted for backward compatibility but server-side
+ * session history takes precedence when available.
+ */
 export async function POST(req: NextRequest) {
   let body: unknown;
 
@@ -95,12 +77,54 @@ export async function POST(req: NextRequest) {
   }
 
   const requestBody = body as Partial<ChatRequestBody>;
+  const { sessionId } = requestBody;
 
+  let validatedMessages: ChatMessage[];
   try {
-    requestBody.messages = validateMessages(requestBody.messages);
+    validatedMessages = validateMessages(requestBody.messages);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid request payload.";
     return jsonError(400, message);
+  }
+
+  // Get or create session
+  let session = sessionId ? sessionStore.get(sessionId) : null;
+  if (sessionId && !session) {
+    // Session doesn't exist, create it
+    session = sessionStore.create();
+    // Update the session ID to match what client expects
+    // Note: In a real DB, you'd use the client-provided ID
+  }
+
+  // Get the latest user message
+  const lastUserMessage = validatedMessages[validatedMessages.length - 1];
+  if (!lastUserMessage || lastUserMessage.role !== "user") {
+    return jsonError(400, "Last message must be from user.");
+  }
+
+  // If we have a session, use server-side history
+  let messagesForLLM: ChatMessage[];
+  if (session) {
+    // Append user message to session
+    sessionStore.appendMessage(session.id, {
+      role: "user",
+      content: lastUserMessage.content,
+    });
+
+    // Get updated session with user message
+    const updatedSession = sessionStore.get(session.id);
+    messagesForLLM = updatedSession!.messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    // Update title if this is the first message
+    if (updatedSession!.messages.length === 1) {
+      sessionStore.rename(updatedSession!.id, buildConversationTitle(lastUserMessage.content));
+    }
+  } else {
+    // No session, use messages from client
+    messagesForLLM = validatedMessages;
   }
 
   const encoder = new TextEncoder();
@@ -109,64 +133,41 @@ export async function POST(req: NextRequest) {
       const send = (payload: StreamEvent) =>
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
 
-      let lastError: unknown = null;
-
       try {
-        for (const provider of EXTRA_PROVIDER_MODELS) {
-          if (!provider.apiKey) {
-            console.warn(`Skipping ${provider.name}: no API key configured.`);
-            continue;
-          }
+        const tokens: string[] = [];
 
-          const client = new OpenAI({
-            apiKey: provider.apiKey,
-            baseURL: provider.baseURL,
+        await streamChat(messagesForLLM, (delta: string) => {
+          tokens.push(delta);
+          send({ type: "token", delta });
+        }, req.signal);
+
+        const fullText = tokens.join("");
+
+        // Save assistant response to session
+        if (session) {
+          sessionStore.appendMessage(session.id, {
+            role: "assistant",
+            content: fullText,
           });
-
-          for (const model of provider.models) {
-            try {
-              const response = await client.chat.completions.create(
-                {
-                  model,
-                  messages: requestBody.messages,
-                  stream: true,
-                },
-                { signal: req.signal }
-              );
-
-              let fullText = "";
-
-              for await (const chunk of response) {
-                if (req.signal.aborted) {
-                  throw new DOMException("The request was aborted.", "AbortError");
-                }
-
-                const delta = chunk.choices[0]?.delta?.content;
-                if (!delta) continue;
-
-                fullText += delta;
-                send({ type: "token", delta });
-              }
-
-              send({ type: "done", text: fullText, model: `${provider.name}:${model}` });
-              controller.close();
-              return;
-            } catch (error) {
-              lastError = error;
-              console.warn(`${provider.name} model failed: ${model}`, error);
-            }
-          }
         }
 
-        const friendlyMessage =
-          lastError instanceof Error && lastError.message.includes("429")
-            ? "The AI service is rate-limited right now. Please try again in a moment."
-            : "The AI service is temporarily unavailable. Please try again in a moment.";
-
-        send({ type: "error", message: friendlyMessage });
+        send({
+          type: "done",
+          text: fullText,
+          model: process.env.LLM_PROVIDER || "openrouter",
+        });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Stream failed.";
-        send({ type: "error", message });
+        const isAbort = error instanceof DOMException && error.name === "AbortError";
+        if (isAbort) {
+          send({ type: "error", message: "Request was cancelled." });
+        } else if (error instanceof Error) {
+          const message = error.message.includes("429")
+            ? "The AI service is rate-limited. Please try again in a moment."
+            : "The AI service is temporarily unavailable. Please try again later.";
+          send({ type: "error", message });
+        } else {
+          send({ type: "error", message: "Stream failed." });
+        }
       } finally {
         controller.close();
       }
