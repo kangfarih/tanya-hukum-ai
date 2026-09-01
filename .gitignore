@@ -19,4 +19,7 @@ build/
 # os
 .DS_Store
 
-# note: corpus/pdf/ is COMMITTED on purpose (public data, CI reproducibility).
+# corpus PDFs are REGENERATED from corpus/sources.jsonl via pipeline/fetch_sources.py
+# (kept out of git: ~90MB of generated artifacts; the manifest is the source of truth).
+corpus/pdf/*
+!corpus/pdf/.gitkeep

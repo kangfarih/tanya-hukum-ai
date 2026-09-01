@@ -7,23 +7,23 @@ Usage:
 
 Polite by default: skips already-downloaded files, small delay between requests,
 and identifies itself with a descriptive User-Agent.
+
+Note: JDIH government sites reset Python's TLS connections (urllib/httpx) but
+accept curl — this script shells out to `curl` (ships with macOS).
 """
 from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import time
 from pathlib import Path
-
-import httpx
 
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "corpus" / "sources.jsonl"
 PDF_DIR = ROOT / "corpus" / "pdf"
 
-HEADERS = {
-    "User-Agent": "tanya-hukum corpus fetcher (public portfolio project; polite)",
-}
+USER_AGENT = "tanya-hukum corpus fetcher (public portfolio project; polite)"
 
 
 def load_manifest() -> list[dict]:
@@ -52,20 +52,20 @@ def main() -> None:
     entries = load_manifest()
     fetched = 0
 
-    with httpx.Client(headers=HEADERS, timeout=60.0, follow_redirects=True) as client:
-        for entry in entries:
-            target = PDF_DIR / f"{entry['id']}.pdf"
-            if target.exists() or not entry.get("download_url"):
-                continue
-            if args.limit is not None and fetched >= args.limit:
-                break
-            print(f"Fetching {entry['id']} ...")
-            resp = client.get(entry["download_url"])
-            resp.raise_for_status()
-            target.write_bytes(resp.content)
-            entry["downloaded_at"] = time.strftime("%Y-%m-%d")
-            fetched += 1
-            time.sleep(args.delay)
+    for entry in entries:
+        target = PDF_DIR / f"{entry['id']}.pdf"
+        if target.exists() or not entry.get("download_url"):
+            continue
+        if args.limit is not None and fetched >= args.limit:
+            break
+        print(f"Fetching {entry['id']} ...")
+        subprocess.run(
+            ["curl", "-sL", "-A", USER_AGENT, "-o", str(target), entry["download_url"]],
+            check=True,
+        )
+        entry["downloaded_at"] = time.strftime("%Y-%m-%d")
+        fetched += 1
+        time.sleep(args.delay)
 
     save_manifest(entries)
     done = sum(1 for e in entries if e.get("downloaded_at"))
