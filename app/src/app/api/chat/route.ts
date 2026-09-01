@@ -1,52 +1,159 @@
+import OpenAI from "openai";
 import type { NextRequest } from "next/server";
 
-import { streamChat, type ChatMessage } from "@/lib/llm";
-import { readSystemPrompt } from "@/lib/prompt";
-
 export const runtime = "nodejs";
-export const maxDuration = 60; // Vercel Hobby cap — comfortable for streamed answers
+export const maxDuration = 60;
 
-interface ClientMessage {
-  role: "user" | "assistant";
+export type ChatRole = "user" | "assistant" | "system";
+
+export interface ChatMessage {
+  role: ChatRole;
   content: string;
 }
 
-/** SSE endpoint: POST { messages } → streams token deltas back to the browser. */
-export async function POST(req: NextRequest) {
-  const body = (await req.json()) as { messages?: ClientMessage[] };
+export interface ChatRequestBody {
+  messages: ChatMessage[];
+}
 
-  const history: ChatMessage[] = (body.messages ?? []).map((m) => ({
-    role: m.role,
-    content: m.content,
-  }));
-  const system: ChatMessage = { role: "system", content: await readSystemPrompt() };
-  const messages = [system, ...history];
+export interface StreamEvent {
+  type: "token" | "done" | "error";
+  delta?: string;
+  text?: string;
+  model?: string;
+  message?: string;
+}
+
+const OPENROUTER_MODELS = [
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "deepseek/deepseek-r1:free",
+  "google/gemini-2.0-flash-exp:free",
+] as const;
+
+const MAX_HISTORY = 20;
+
+function jsonError(status: number, message: string) {
+  return Response.json({ error: message }, { status });
+}
+
+function validateMessages(messages: unknown): ChatMessage[] {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    throw new Error("messages must be a non-empty array.");
+  }
+
+  const normalized: ChatMessage[] = messages.slice(-MAX_HISTORY).map((message) => {
+    if (!message || typeof message !== "object") {
+      throw new Error("Each message must be an object.");
+    }
+
+    const { role, content } = message as Partial<ChatMessage>;
+
+    if (typeof role !== "string" || typeof content !== "string") {
+      throw new Error("Each message needs a role and content string.");
+    }
+
+    const cleanedContent = content.trim();
+    if (!cleanedContent) {
+      throw new Error("Message content cannot be empty.");
+    }
+
+    return {
+      role: role === "user" || role === "assistant" ? role : "user",
+      content: cleanedContent,
+    };
+  });
+
+  if (normalized.length === 0) {
+    throw new Error("At least one valid message is required.");
+  }
+
+  return normalized;
+}
+
+/** SSE endpoint: POST { messages } -> streams tokens from OpenRouter with model failover. */
+export async function POST(req: NextRequest) {
+  let body: unknown;
+
+  try {
+    body = await req.json();
+  } catch {
+    return jsonError(400, "Request body must be valid JSON.");
+  }
+
+  const requestBody = body as Partial<ChatRequestBody>;
+
+  try {
+    requestBody.messages = validateMessages(requestBody.messages);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid request payload.";
+    return jsonError(400, message);
+  }
+
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    return jsonError(503, "OpenRouter is not configured. Please add OPENROUTER_API_KEY.");
+  }
+
+  const client = new OpenAI({
+    apiKey,
+    baseURL: "https://openrouter.ai/api/v1",
+  });
+
+  let successfulModel = "";
+  let successfulStream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk> | null = null;
+  let lastError: unknown = null;
+
+  // Try the primary model first, then fall back through the list if it hits rate limits or any other error.
+  for (const model of OPENROUTER_MODELS) {
+    try {
+      const stream = await client.chat.completions.create(
+        {
+          model,
+          messages: requestBody.messages,
+          stream: true,
+        },
+        { signal: req.signal }
+      );
+
+      successfulModel = model;
+      successfulStream = stream;
+      console.log(`OpenRouter responded via model: ${model}`);
+      break;
+    } catch (error) {
+      lastError = error;
+      console.warn(`OpenRouter model failed: ${model}`, error);
+    }
+  }
+
+  if (!successfulStream || !successfulModel) {
+    const friendlyMessage =
+      lastError instanceof Error && lastError.message.includes("429")
+        ? "The AI service is rate-limited right now. Please try again in a moment."
+        : "The AI service is temporarily unavailable. Please try again in a moment.";
+
+    return jsonError(503, friendlyMessage);
+  }
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (payload: unknown) =>
+      const send = (payload: StreamEvent) =>
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
 
       try {
-        let text = "";
-        await streamChat(
-          messages,
-          (delta) => {
-            text += delta;
-            send({ type: "token", delta });
-          },
-          // Forward client cancellation to the provider.
-          req.signal
-        );
-        send({ type: "done", text });
-      } catch (err) {
-        const aborted = err instanceof Error && err.name === "AbortError";
-        send(
-          aborted
-            ? { type: "aborted" }
-            : { type: "error", message: "stream failed — try again" }
-        );
+        let fullText = "";
+
+        for await (const chunk of successfulStream!) {
+          const delta = chunk.choices[0]?.delta?.content;
+          if (!delta) continue;
+
+          fullText += delta;
+          send({ type: "token", delta });
+        }
+
+        send({ type: "done", text: fullText, model: successfulModel });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Stream failed.";
+        send({ type: "error", message });
       } finally {
         controller.close();
       }

@@ -8,10 +8,19 @@ export interface ChatMessage {
 }
 
 interface ProviderConfig {
-  name: "gemini" | "deepseek";
+  name: "gemini" | "deepseek" | "openrouter";
   apiKey: string;
   baseURL: string;
   model: string;
+}
+
+function getGeminiApiKeys(): string[] {
+  const rawKeys = process.env.GEMINI_API_KEYS ?? process.env.GEMINI_API_KEY ?? "";
+
+  return rawKeys
+    .split(",")
+    .map((key) => key.trim())
+    .filter(Boolean);
 }
 
 /**
@@ -20,7 +29,7 @@ interface ProviderConfig {
  * swap LLM_PROVIDER and the model env, and everything follows.
  */
 function getConfig(): ProviderConfig {
-  const provider = process.env.LLM_PROVIDER ?? "gemini";
+  const provider = (process.env.LLM_PROVIDER ?? "gemini").toLowerCase();
 
   if (provider === "deepseek") {
     return {
@@ -31,9 +40,18 @@ function getConfig(): ProviderConfig {
     };
   }
 
+  if (provider === "openrouter") {
+    return {
+      name: "openrouter",
+      apiKey: process.env.OPENROUTER_API_KEY ?? "",
+      baseURL: "https://openrouter.ai/api/v1",
+      model: process.env.OPENROUTER_MODEL ?? "openai/gpt-oss-20b:free",
+    };
+  }
+
   return {
     name: "gemini",
-    apiKey: process.env.GEMINI_API_KEY ?? "",
+    apiKey: getGeminiApiKeys()[0] ?? "",
     baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
     model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
   };
@@ -57,19 +75,39 @@ export async function streamChat(
   signal?: AbortSignal
 ): Promise<void> {
   const cfg = getConfig();
-  const client = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseURL });
+  const apiKeys = cfg.name === "gemini" ? getGeminiApiKeys() : [cfg.apiKey];
 
-  const stream = await client.chat.completions.create(
-    {
-      model: cfg.model,
-      messages,
-      stream: true,
-    },
-    { signal }
-  );
+  if (apiKeys.length === 0) {
+    throw new Error("No API key configured for the selected LLM provider.");
+  }
 
-  for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content;
-    if (delta) onToken(delta);
+  let lastError: unknown;
+
+  for (const apiKey of apiKeys) {
+    try {
+      const client = new OpenAI({ apiKey, baseURL: cfg.baseURL });
+      const stream = await client.chat.completions.create(
+        {
+          model: cfg.model,
+          messages,
+          stream: true,
+        },
+        { signal }
+      );
+
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content;
+        if (delta) onToken(delta);
+      }
+
+      return;
+    } catch (error) {
+      lastError = error;
+      continue;
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
   }
 }

@@ -31,6 +31,43 @@ parse → chunk → embed → hybrid retrieve → cite → evaluate
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
+## Local app quickstart
+
+The web app lives in [`app/`](app/README.md) and uses a streaming chat API with OpenRouter failover.
+
+```bash
+cd app
+cp .env.local.example .env.local
+npm install
+npm run dev
+```
+
+Required env values:
+
+```env
+LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=your_openrouter_key
+OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct:free
+```
+
+Fallback model order used by the route:
+
+1. `meta-llama/llama-3.3-70b-instruct:free`
+2. `deepseek/deepseek-r1:free`
+3. `google/gemini-2.0-flash-exp:free`
+
+The route accepts JSON in this shape:
+
+```json
+{
+  "messages": [
+    { "role": "user", "content": "Apa sanksi keterlambatan pelaporan?" }
+  ]
+}
+```
+
+It validates requests, caps history to the last 20 messages, streams tokens with SSE, and returns a JSON 503 error when all models fail.
+
 ## Eval results *(to be filled in Layer 4, Week 8–9)*
 
 | Config | Accuracy | p50 latency | p95 latency | Cost/query |
