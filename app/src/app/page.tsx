@@ -365,13 +365,13 @@ function HomeContent() {
                   {label}
                 </p>
 
-                {groupedSessions.map((session) => {
+                {groupedSessions.map((session, index) => {
                   const isActive = activeSessionId === session.id;
                   const isStreaming = session.status === "streaming" || session.status === "sending";
                   
                   return (
                     <div
-                      key={session.id}
+                      key={`${session.id}-${index}`}
                       className={`group relative rounded-xl border p-2 ${
                         isActive
                           ? "border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900"
