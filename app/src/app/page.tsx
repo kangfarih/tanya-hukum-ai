@@ -102,6 +102,15 @@ function RegenerateIcon() {
   );
 }
 
+function CloseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
 function ChatMenu({
   onEdit,
   onDelete,
@@ -785,13 +794,14 @@ function HomeContent() {
                           rows={3}
                           className="w-full resize-none rounded-xl border border-zinc-300 bg-white p-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
                         />
-                        <div className="flex gap-2">
+                        <div className="flex gap-1">
                           <button
                             type="button"
                             onClick={() => void handleEditAndResend(index)}
-                            className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                            className="rounded p-1.5 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
+                            title="Resend"
                           >
-                            Resend
+                            <SendIcon />
                           </button>
                           <button
                             type="button"
@@ -799,9 +809,10 @@ function HomeContent() {
                               setEditingIndex(null);
                               setEditDraft("");
                             }}
-                            className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                            className="rounded p-1.5 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
+                            title="Cancel"
                           >
-                            Cancel
+                            <CloseIcon />
                           </button>
                         </div>
                       </div>
