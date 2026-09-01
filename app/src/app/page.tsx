@@ -385,6 +385,37 @@ function HomeContent() {
       return rotated;
     });
     
+    // Fetch new suggestions from API
+    suggestionsLoaded.current = false;
+    try {
+      const response = await fetch("/api/suggestions");
+      if (response.ok) {
+        const text = await response.text();
+        let data: { suggestions?: unknown } = {};
+        if (text) {
+          try {
+            data = JSON.parse(text) as { suggestions?: unknown };
+          } catch {
+            // Ignore parse errors
+          }
+        }
+        const nextSuggestions = Array.isArray(data.suggestions)
+          ? data.suggestions.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+          : [];
+        if (nextSuggestions.length > 0) {
+          setLocalSuggestions((prev) => {
+            const merged = [...prev, ...nextSuggestions];
+            if (typeof window !== "undefined") {
+              localStorage.setItem("suggestions", JSON.stringify(merged));
+            }
+            return merged;
+          });
+        }
+      }
+    } catch {
+      // Ignore fetch errors
+    }
+    
     await sendMessage(value);
   }
 
