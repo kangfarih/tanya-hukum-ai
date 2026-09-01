@@ -52,6 +52,26 @@ function groupConversationDateLabel(date: number) {
   return "Sebelumnya";
 }
 
+function formatRelativeTime(timestamp: number): string {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const weeks = Math.floor(days / 7);
+  const months = Math.floor(days / 30);
+  const years = Math.floor(days / 365);
+
+  if (seconds < 60) return `${seconds}s`;
+  if (minutes < 60) return `${minutes}m`;
+  if (hours < 24) return `${hours}h`;
+  if (days < 7) return `${days}d`;
+  if (weeks < 4) return `${weeks}w`;
+  if (months < 12) return `${months}mo`;
+  return `${years}y`;
+}
+
 function ThreeDotIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -447,12 +467,9 @@ function HomeContent() {
                                 {session.title}
                               </span>
                             </div>
-                            {session.messages.length > 0 && (
-                              <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
-                                {session.messages[session.messages.length - 1].content.slice(0, 50)}
-                                {session.messages[session.messages.length - 1].content.length > 50 ? "..." : ""}
-                              </p>
-                            )}
+                            <p className="mt-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
+                              {formatRelativeTime(session.updatedAt)}
+                            </p>
                           </button>
 
                           <ChatMenu
