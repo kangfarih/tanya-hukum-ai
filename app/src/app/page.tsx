@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { ReduxProvider } from "../components/ReduxProvider";
@@ -216,6 +215,7 @@ function HomeContent() {
     allSessions,
     isLoading,
     error,
+    isSessionLoading,
     sendMessage,
     stop,
     selectSession,
@@ -485,17 +485,10 @@ function HomeContent() {
             </button>
 
             <div>
-              <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">TanyaHukum</h1>
+              <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Tanya Hukum</h1>
               <p className="text-sm text-zinc-500 dark:text-zinc-400">Ask Indonesian law. Every answer cites its source.</p>
             </div>
           </div>
-
-          <Link
-            href="/project-doc"
-            className="rounded-full border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-          >
-            Project docs
-          </Link>
         </header>
 
         <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 pb-24 pt-4 lg:px-6">
