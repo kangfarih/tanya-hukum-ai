@@ -751,7 +751,7 @@ function HomeContent() {
                               if (!lastUser) return;
                               void sendMessage(lastUser.content);
                             }}
-                            className="rounded bg-white p-1 text-black hover:bg-zinc-800 hover:text-white dark:bg-zinc-200 dark:text-black dark:hover:bg-zinc-700"
+                            className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
                             title="Regenerate"
                           >
                             <RegenerateIcon />
@@ -762,7 +762,7 @@ function HomeContent() {
                             onClick={() => {
                               navigator.clipboard.writeText(content).catch(() => undefined);
                             }}
-                            className="rounded bg-white p-1 text-black hover:bg-zinc-800 hover:text-white dark:bg-zinc-200 dark:text-black dark:hover:bg-zinc-700"
+                            className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
                             title="Copy"
                           >
                             <CopyIcon />
@@ -823,7 +823,7 @@ function HomeContent() {
                           setEditingIndex(index);
                           setEditDraft(content);
                         }}
-                        className="inline-flex items-center gap-1 rounded bg-white p-1 text-black hover:bg-zinc-800 hover:text-white dark:bg-zinc-200 dark:text-black dark:hover:bg-zinc-700"
+                        className="inline-flex items-center rounded bg-white p-1 text-black hover:bg-zinc-800 hover:text-white dark:bg-zinc-200 dark:text-black dark:hover:bg-zinc-700"
                         title="Edit & resend"
                       >
                         <EditIcon />
