@@ -10,6 +10,25 @@ const FALLBACK_SUGGESTIONS = [
   "Bagaimana cara menghitung denda administrasi?",
 ];
 
+// List of legal topics for randomization
+const LEGAL_TOPICS = [
+  "perdata",
+  "pidana",
+  "ketenagakerjaan",
+  "pajak",
+  "lingkungan",
+  "digital",
+  "korporasi",
+  "hak asasi",
+  "internasional",
+  "konstitusi",
+  "properti",
+  "keluarga",
+  "dagang",
+  "ilmu pengetahuan",
+  "kesehatan",
+];
+
 function getProviderConfig() {
   const provider = (process.env.LLM_PROVIDER ?? "openrouter").toLowerCase();
 
@@ -53,13 +72,13 @@ function parseSuggestions(rawContent: string): string[] {
     const parsed = JSON.parse(normalized) as unknown;
 
     if (Array.isArray(parsed)) {
-      return parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 4);
+      return parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 8);
     }
 
     if (parsed && typeof parsed === "object") {
       const suggestions = (parsed as { suggestions?: unknown }).suggestions;
       if (Array.isArray(suggestions)) {
-        return suggestions.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 4);
+        return suggestions.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 8);
       }
     }
   } catch {
@@ -71,7 +90,7 @@ function parseSuggestions(rawContent: string): string[] {
     try {
       const parsed = JSON.parse(fallbackMatch[0]) as unknown;
       if (Array.isArray(parsed)) {
-        return parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 4);
+        return parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 8);
       }
     } catch {
       // Ignore and return empty.
@@ -89,6 +108,10 @@ export async function GET() {
       return Response.json({ suggestions: FALLBACK_SUGGESTIONS });
     }
 
+    // Pick 2-3 random topics for this request
+    const shuffledTopics = [...LEGAL_TOPICS].sort(() => Math.random() - 0.5);
+    const selectedTopics = shuffledTopics.slice(0, 2 + Math.floor(Math.random() * 2));
+
     const openai = new OpenAI({
       apiKey: provider.apiKey,
       baseURL: provider.baseURL,
@@ -99,16 +122,18 @@ export async function GET() {
       messages: [
         {
           role: "system",
-          content: `Buat 4 pertanyaan hukum yang unik dan relevan dengan hukum Indonesia.
-Kembalikan HANYA array JSON berisi 4 string dalam Bahasa Indonesia, tanpa teks tambahan.
-Contoh: ["pertanyaan 1", "pertanyaan 2", "pertanyaan 3", "pertanyaan 4"]`,
+          content: `Anda adalah asisten hukum Indonesia yang membantu menghasilkan pertanyaan contoh.
+Buat 8 pertanyaan hukum yang unik, bervariasi, dan relevan dengan hukum Indonesia.
+Pertanyaan harus mencakup berbagai topik hukum dan dalam Bahasa Indonesia yang baik.
+Kembalikan HANYA array JSON berisi 8 string, tanpa teks tambahan.
+Contoh: ["pertanyaan 1", "pertanyaan 2", "pertanyaan 3", "pertanyaan 4", "pertanyaan 5", "pertanyaan 6", "pertanyaan 7", "pertanyaan 8"]`,
         },
         {
           role: "user",
-          content: "Buat 4 contoh pertanyaan hukum dalam Bahasa Indonesia.",
+          content: `Buat 8 pertanyaan hukum yang beragam dengan fokus pada topik: ${selectedTopics.join(", ")}. Pastikan pertanyaan bervariasi dari yang praktis hingga teoritis.`,
         },
       ],
-      temperature: 0.8,
+      temperature: 0.9,
     });
 
     const content = response.choices[0]?.message?.content ?? "[]";

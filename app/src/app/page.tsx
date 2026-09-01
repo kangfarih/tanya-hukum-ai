@@ -368,6 +368,41 @@ function HomeContent() {
     await sendMessage(value);
   }
 
+  // Silently fetch new suggestions in the background
+  async function refreshSuggestions() {
+    try {
+      const response = await fetch("/api/suggestions");
+      if (!response.ok) return;
+
+      const text = await response.text();
+      let data: { suggestions?: unknown } = {};
+
+      if (text) {
+        try {
+          data = JSON.parse(text) as { suggestions?: unknown };
+        } catch {
+          return;
+        }
+      }
+
+      const newSuggestions = Array.isArray(data.suggestions)
+        ? data.suggestions.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        : [];
+
+      if (newSuggestions.length > 0) {
+        setLocalSuggestions((prev) => {
+          const merged = [...prev, ...newSuggestions];
+          if (typeof window !== "undefined") {
+            localStorage.setItem("suggestions", JSON.stringify(merged));
+          }
+          return merged;
+        });
+      }
+    } catch {
+      // Silent fail - suggestions are non-critical
+    }
+  }
+
   async function handleSuggestionClick(value: string) {
     setInput("");
     setSidebarOpen(false);
@@ -385,36 +420,8 @@ function HomeContent() {
       return rotated;
     });
     
-    // Fetch new suggestions from API
-    suggestionsLoaded.current = false;
-    try {
-      const response = await fetch("/api/suggestions");
-      if (response.ok) {
-        const text = await response.text();
-        let data: { suggestions?: unknown } = {};
-        if (text) {
-          try {
-            data = JSON.parse(text) as { suggestions?: unknown };
-          } catch {
-            // Ignore parse errors
-          }
-        }
-        const nextSuggestions = Array.isArray(data.suggestions)
-          ? data.suggestions.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-          : [];
-        if (nextSuggestions.length > 0) {
-          setLocalSuggestions((prev) => {
-            const merged = [...prev, ...nextSuggestions];
-            if (typeof window !== "undefined") {
-              localStorage.setItem("suggestions", JSON.stringify(merged));
-            }
-            return merged;
-          });
-        }
-      }
-    } catch {
-      // Ignore fetch errors
-    }
+    // Silently fetch new suggestions in the background
+    void refreshSuggestions();
     
     await sendMessage(value);
   }
