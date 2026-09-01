@@ -459,26 +459,26 @@ function HomeContent() {
                             onClick={() => handleSelectChat(session.id)}
                             className="min-w-0 flex-1 text-left transition hover:text-zinc-900 dark:hover:text-zinc-50"
                           >
-                            <div className="flex items-center gap-2">
-                              {isStreaming && (
-                                <span className="inline-block h-2 w-2 flex-shrink-0 animate-pulse rounded-full bg-green-500" />
-                              )}
-                              <span className="block truncate text-sm font-medium text-zinc-700 dark:text-zinc-200">
-                                {session.title}
-                              </span>
-                            </div>
+                            <span className="block truncate text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                              {session.title}
+                            </span>
                             <p className="mt-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
                               {formatRelativeTime(session.updatedAt)}
                             </p>
                           </button>
 
-                          <ChatMenu
-                            onEdit={() => {
-                              setRenameId(session.id);
-                              setRenameDraft(session.title);
-                            }}
-                            onDelete={() => handleDeleteChat(session.id)}
-                          />
+                          <div className="flex flex-shrink-0 items-center gap-1">
+                            {isStreaming && (
+                              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-green-500" />
+                            )}
+                            <ChatMenu
+                              onEdit={() => {
+                                setRenameId(session.id);
+                                setRenameDraft(session.title);
+                              }}
+                              onDelete={() => handleDeleteChat(session.id)}
+                            />
+                          </div>
                         </div>
                       )}
                     </div>
