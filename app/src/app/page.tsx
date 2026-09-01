@@ -224,6 +224,7 @@ export default function Home() {
 function HomeContent() {
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [localSuggestions, setLocalSuggestions] = useState<string[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
@@ -233,6 +234,22 @@ function HomeContent() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const suggestionsLoaded = useRef(false);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
+
+  // Load local suggestions from localStorage on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = localStorage.getItem("suggestions");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setLocalSuggestions(parsed);
+        }
+      }
+    } catch {
+      // Ignore malformed data
+    }
+  }, []);
 
   const {
     activeSession,
@@ -296,7 +313,23 @@ function HomeContent() {
           : [];
 
         if (nextSuggestions.length > 0) {
-          setSuggestions(nextSuggestions);
+          // Push API suggestions to the end of local suggestions
+          setLocalSuggestions((prev) => {
+            const merged = [...prev, ...nextSuggestions];
+            // Save to localStorage
+            if (typeof window !== "undefined") {
+              localStorage.setItem("suggestions", JSON.stringify(merged));
+            }
+            return merged;
+          });
+          // Always show first 4 local suggestions on empty chat
+          setSuggestions((prev) => {
+            // If we're on an empty chat (no active session or empty messages), show first 4
+            if (prev.length === 0 || (activeSession && activeSession.messages.length === 0)) {
+              return localSuggestions.slice(0, 4);
+            }
+            return prev;
+          });
           return;
         }
 
@@ -338,6 +371,20 @@ function HomeContent() {
   async function handleSuggestionClick(value: string) {
     setInput("");
     setSidebarOpen(false);
+    
+    // Rotate first 4 suggestions to the end of local suggestions
+    setLocalSuggestions((prev) => {
+      if (prev.length <= 4) return prev;
+      const first4 = prev.slice(0, 4);
+      const rest = prev.slice(4);
+      const rotated = [...rest, ...first4];
+      // Save to localStorage
+      if (typeof window !== "undefined") {
+        localStorage.setItem("suggestions", JSON.stringify(rotated));
+      }
+      return rotated;
+    });
+    
     await sendMessage(value);
   }
 
@@ -353,6 +400,10 @@ function HomeContent() {
   function handleNewChat() {
     selectSession("");
     setSidebarOpen(false);
+    // Show first 4 local suggestions when creating new chat
+    if (localSuggestions.length > 0) {
+      setSuggestions(localSuggestions.slice(0, 4));
+    }
   }
 
   function handleSelectChat(sessionId: string) {
