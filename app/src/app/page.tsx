@@ -208,6 +208,7 @@ function HomeContent() {
   const [renameDraft, setRenameDraft] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const suggestionsLoaded = useRef(false);
 
   const {
     activeSession,
@@ -240,8 +241,11 @@ function HomeContent() {
   const currentMessages = activeSession?.messages ?? [];
   const isEmpty = currentMessages.length === 0;
 
-  // Load suggestions from API
+  // Load suggestions from API (only once)
   useEffect(() => {
+    if (suggestionsLoaded.current) return;
+    suggestionsLoaded.current = true;
+
     const loadSuggestions = async () => {
       try {
         const response = await fetch("/api/suggestions");
