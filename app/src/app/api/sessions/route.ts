@@ -9,9 +9,9 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const title = (body as { title?: string }).title;
+    const { title, sessionId } = body as { title?: string; sessionId?: string };
 
-    const session = sessionStore.create(title);
+    const session = sessionStore.create(title, sessionId);
 
     return Response.json({
       id: session.id,

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { v4 as uuidv4 } from "uuid";
 import type { RootState, AppDispatch } from "../src/lib/redux/store";
 import {
   createSession,
@@ -65,11 +66,14 @@ export function useSessionChat() {
   }, []);
 
   const createNewSession = useCallback(async (title?: string) => {
+    const sessionId = uuidv4();
+    
+    // Create session on server
     try {
       const response = await fetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({ sessionId, title }),
       });
 
       if (!response.ok) {
@@ -78,17 +82,19 @@ export function useSessionChat() {
 
       const data = await response.json();
       
-      dispatch(createSession({ sessionId: data.id, title: data.title }));
-      dispatch(setActiveSession(data.id));
+      // Use the server-returned ID or the one we generated
+      const finalId = data.id || sessionId;
       
-      return data.id as string;
+      dispatch(createSession({ sessionId: finalId, title: data.title || title }));
+      dispatch(setActiveSession(finalId));
+      
+      return finalId;
     } catch (err) {
       console.error("Error creating session:", err);
       // Fallback to local-only session
-      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      dispatch(createSession({ sessionId: tempId, title }));
-      dispatch(setActiveSession(tempId));
-      return tempId;
+      dispatch(createSession({ sessionId, title }));
+      dispatch(setActiveSession(sessionId));
+      return sessionId;
     }
   }, [dispatch]);
 
@@ -108,6 +114,16 @@ export function useSessionChat() {
     setIsLoading(true);
     setError(null);
 
+    // Get existing messages BEFORE adding new ones
+    const existingSession = allSessions.find(s => s.id === sessionId);
+    const existingMessages = existingSession?.messages ?? [];
+    
+    // Build the messages array for API (existing + new user message)
+    const messagesForAPI = [
+      ...existingMessages.map(m => ({ role: m.role, content: m.content })),
+      { role: "user" as const, content: trimmed },
+    ];
+
     // Add user message to Redux
     dispatch(appendMessage({
       sessionId,
@@ -126,14 +142,6 @@ export function useSessionChat() {
     abortRef.current = controller;
 
     try {
-      // Build messages array for API
-      const session = allSessions.find(s => s.id === sessionId);
-      const messages = session?.messages ?? [];
-      const messagesForAPI = messages.map(m => ({
-        role: m.role,
-        content: m.content,
-      }));
-
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

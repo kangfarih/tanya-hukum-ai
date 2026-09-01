@@ -1,3 +1,5 @@
+import { v4 as uuidv4 } from "uuid";
+
 /**
  * Server-side session store abstraction.
  * 
@@ -26,7 +28,7 @@ export interface ChatSession {
 }
 
 export interface SessionStore {
-  create(title?: string): ChatSession;
+  create(title?: string, sessionId?: string): ChatSession;
   get(id: string): ChatSession | null;
   appendMessage(id: string, message: Omit<ChatMessage, "id" | "createdAt">): ChatMessage | null;
   list(): ChatSession[];
@@ -44,10 +46,10 @@ export interface SessionStore {
 class InMemorySessionStore implements SessionStore {
   private sessions: Map<string, ChatSession> = new Map();
 
-  create(title?: string): ChatSession {
+  create(title?: string, sessionId?: string): ChatSession {
     const now = Date.now();
     const session: ChatSession = {
-      id: `session-${now}-${Math.random().toString(36).slice(2, 8)}`,
+      id: sessionId || uuidv4(),
       title: title ?? "New chat",
       messages: [],
       createdAt: now,
@@ -67,7 +69,7 @@ class InMemorySessionStore implements SessionStore {
 
     const newMessage: ChatMessage = {
       ...message,
-      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: uuidv4(),
       createdAt: Date.now(),
     };
 

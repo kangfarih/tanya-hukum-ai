@@ -1,4 +1,5 @@
 import { createSlice, PayloadAction, createSelector } from "@reduxjs/toolkit";
+import { v4 as uuidv4 } from "uuid";
 
 export type ChatRole = "user" | "assistant";
 
@@ -33,11 +34,11 @@ const initialState: SessionState = {
 };
 
 function generateMessageId(): string {
-  return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return uuidv4();
 }
 
 function generateSessionId(): string {
-  return `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return uuidv4();
 }
 
 function buildConversationTitle(content: string): string {
