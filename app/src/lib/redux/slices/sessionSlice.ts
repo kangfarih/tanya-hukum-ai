@@ -253,12 +253,12 @@ export const selectActiveSession = createSelector(
 );
 
 export const selectAllSessionsSorted = createSelector([selectAllSessions], (sessions) => {
-  // Deduplicate by ID and sort
+  // Deduplicate by ID, keep creation order (sorted by createdAt ascending)
   const unique = new Map<string, ChatSession>();
   for (const session of Object.values(sessions)) {
     unique.set(session.id, session);
   }
-  return Array.from(unique.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+  return Array.from(unique.values()).sort((a, b) => a.createdAt - b.createdAt);
 });
 
 export const selectSessionStatus = (sessionId: string) =>

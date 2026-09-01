@@ -437,12 +437,22 @@ function HomeContent() {
                           <button
                             type="button"
                             onClick={() => handleSelectChat(session.id)}
-                            className="flex-1 truncate text-left text-sm font-medium text-zinc-700 transition hover:text-zinc-900 dark:text-zinc-200 dark:hover:text-zinc-50"
+                            className="flex-1 text-left transition hover:text-zinc-900 dark:hover:text-zinc-50"
                           >
-                            {isStreaming && (
-                              <span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-green-500" />
+                            <div className="flex items-center gap-2">
+                              {isStreaming && (
+                                <span className="inline-block h-2 w-2 flex-shrink-0 animate-pulse rounded-full bg-green-500" />
+                              )}
+                              <span className="truncate text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                                {session.title}
+                              </span>
+                            </div>
+                            {session.messages.length > 0 && (
+                              <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
+                                {session.messages[session.messages.length - 1].content.slice(0, 50)}
+                                {session.messages[session.messages.length - 1].content.length > 50 ? "..." : ""}
+                              </p>
                             )}
-                            {session.title}
                           </button>
 
                           <ChatMenu
