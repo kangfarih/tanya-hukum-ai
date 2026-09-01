@@ -103,10 +103,12 @@ export function useSessionChat() {
     if (!trimmed || isLoading) return;
 
     let sessionId = activeSessionId;
+    let isNewSession = false;
 
     // Create session if none exists
     if (!sessionId) {
       sessionId = await createNewSession();
+      isNewSession = true;
     }
 
     if (!sessionId) return;
@@ -115,7 +117,8 @@ export function useSessionChat() {
     setError(null);
 
     // Get existing messages BEFORE adding new ones
-    const existingSession = allSessions.find(s => s.id === sessionId);
+    // For new sessions, there are no existing messages
+    const existingSession = isNewSession ? null : allSessions.find(s => s.id === sessionId);
     const existingMessages = existingSession?.messages ?? [];
     
     // Build the messages array for API (existing + new user message)

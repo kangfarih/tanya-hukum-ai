@@ -90,10 +90,8 @@ export async function POST(req: NextRequest) {
   // Get or create session
   let session = sessionId ? sessionStore.get(sessionId) : null;
   if (sessionId && !session) {
-    // Session doesn't exist, create it
-    session = sessionStore.create();
-    // Update the session ID to match what client expects
-    // Note: In a real DB, you'd use the client-provided ID
+    // Session doesn't exist, create it with the provided ID
+    session = sessionStore.create(undefined, sessionId);
   }
 
   // Get the latest user message
