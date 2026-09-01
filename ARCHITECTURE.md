@@ -7,7 +7,7 @@ This project is designed as a clear, interview-friendly legal AI system: a small
 | Layer | Where it lives | Notes |
 |---|---|---|
 | **app/** | Next.js + TypeScript — UI + API routes | Streaming chat UI and server route. |
-| **pipeline/** | Python — fetch, ingest, evals | Runs locally and in CI; not a production host. |
+| **pipeline/** | Python — corpus fetch and ingestion | Runs locally; downloads and processes legal documents. |
 | **corpus/** | Raw sources and manifests | Tracks public legal documents and source metadata. |
 | **prompts/** | Versioned system prompts | Keeps the system message in repo-controlled files. |
 | **evals/** | Data and grading scripts | Used to validate answer quality and stability. |
@@ -16,22 +16,26 @@ This project is designed as a clear, interview-friendly legal AI system: a small
 
 ```text
 Browser
-  -> Next.js app route
-  -> validate request payload
-  -> try Gemini first
-  -> fallback to OpenRouter
-  -> fallback to DeepSeek
-  -> stream tokens back in SSE
+  -> Next.js app route (POST /api/chat)
+  -> validate request payload (messages array, max 20 history)
+  -> iterate through providers in order:
+     1. OpenRouter (meta-llama/llama-3.3-70b-instruct)
+     2. Gemini (gemini-2.5-flash)
+     3. DeepSeek (deepseek-chat)
+  -> for each provider, try each model in sequence
+  -> stream tokens back via SSE (text/event-stream)
+  -> on provider/model failure, try next automatically
+  -> return 503 JSON error when all providers fail
 ```
 
 This keeps the app resilient when one provider rate-limits or returns a model error.
 
 ## AI provider policy
 
-The app intentionally uses a simple priority order for reliability and portfolio clarity:
+The app uses a priority order for reliability and portfolio clarity:
 
-1. Gemini (`models/gemini-3.6-flash`)
-2. OpenRouter (`meta-llama/llama-3.3-70b-instruct`)
+1. OpenRouter (`meta-llama/llama-3.3-70b-instruct`)
+2. Gemini (`gemini-2.5-flash`) — supports multiple API keys for automatic failover
 3. DeepSeek (`deepseek-chat`)
 
 The route catches provider/model failures and tries the next provider automatically.
@@ -57,7 +61,7 @@ It also:
 
 The project is intended to evolve toward a retrieval-backed legal assistant:
 
-- local corpus of Indonesian legal documents
+- local corpus of Indonesian legal documents (10 documents currently)
 - chunking and metadata extraction
 - retrieval for legal questions
 - grounded answer generation with citation support

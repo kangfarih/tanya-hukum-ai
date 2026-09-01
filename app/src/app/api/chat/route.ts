@@ -23,24 +23,18 @@ export interface StreamEvent {
   message?: string;
 }
 
-const OPENROUTER_MODELS = [
-  "meta-llama/llama-3.3-70b-instruct",
-  "deepseek/deepseek-r1",
-  "openai/gpt-4o-mini",
-] as const;
-
 const EXTRA_PROVIDER_MODELS = [
-  {
-    name: "gemini",
-    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-    apiKey: process.env.GEMINI_API_KEYS?.split(",")[0]?.trim() ?? process.env.GEMINI_API_KEY ?? "",
-    models: ["models/gemini-3.6-flash", "gemini-2.5-flash"],
-  },
   {
     name: "openrouter",
     baseURL: "https://openrouter.ai/api/v1",
     apiKey: process.env.OPENROUTER_API_KEY ?? "",
     models: ["meta-llama/llama-3.3-70b-instruct", "deepseek/deepseek-r1", "openai/gpt-4o-mini"],
+  },
+  {
+    name: "gemini",
+    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    apiKey: process.env.GEMINI_API_KEYS?.split(",")[0]?.trim() ?? process.env.GEMINI_API_KEY ?? "",
+    models: ["models/gemini-3.6-flash", "gemini-2.5-flash"],
   },
   {
     name: "deepseek",
@@ -109,75 +103,67 @@ export async function POST(req: NextRequest) {
     return jsonError(400, message);
   }
 
-  const providers = [...EXTRA_PROVIDER_MODELS];
-
-  let successfulModel = "";
-  let successfulStream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk> | null = null;
-  let lastError: unknown = null;
-
-  // Try the next AI backend when a model fails, so the app keeps recovering instead of failing immediately.
-  for (const provider of providers) {
-    if (!provider.apiKey) {
-      console.warn(`Skipping ${provider.name}: no API key configured.`);
-      continue;
-    }
-
-    const client = new OpenAI({
-      apiKey: provider.apiKey,
-      baseURL: provider.baseURL,
-    });
-
-    for (const model of provider.models) {
-      try {
-        const stream = await client.chat.completions.create(
-          {
-            model,
-            messages: requestBody.messages,
-            stream: true,
-          },
-          { signal: req.signal }
-        );
-
-        successfulModel = `${provider.name}:${model}`;
-        successfulStream = stream;
-        console.log(`AI response succeeded via ${successfulModel}`);
-        break;
-      } catch (error) {
-        lastError = error;
-        console.warn(`${provider.name} model failed: ${model}`, error);
-      }
-    }
-
-    if (successfulStream) break;
-  }
-
-  if (!successfulStream || !successfulModel) {
-    const friendlyMessage =
-      lastError instanceof Error && lastError.message.includes("429")
-        ? "The AI service is rate-limited right now. Please try again in a moment."
-        : "The AI service is temporarily unavailable. Please try again in a moment.";
-
-    return jsonError(503, friendlyMessage);
-  }
-
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (payload: StreamEvent) =>
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
 
+      let lastError: unknown = null;
+
       try {
-        let fullText = "";
+        for (const provider of EXTRA_PROVIDER_MODELS) {
+          if (!provider.apiKey) {
+            console.warn(`Skipping ${provider.name}: no API key configured.`);
+            continue;
+          }
 
-        for await (const chunk of successfulStream!) {
-          const delta = chunk.choices[0]?.delta?.content;
-          if (!delta) continue;
+          const client = new OpenAI({
+            apiKey: provider.apiKey,
+            baseURL: provider.baseURL,
+          });
 
-          fullText += delta;
-          send({ type: "token", delta });
+          for (const model of provider.models) {
+            try {
+              const response = await client.chat.completions.create(
+                {
+                  model,
+                  messages: requestBody.messages,
+                  stream: true,
+                },
+                { signal: req.signal }
+              );
+
+              let fullText = "";
+
+              for await (const chunk of response) {
+                if (req.signal.aborted) {
+                  throw new DOMException("The request was aborted.", "AbortError");
+                }
+
+                const delta = chunk.choices[0]?.delta?.content;
+                if (!delta) continue;
+
+                fullText += delta;
+                send({ type: "token", delta });
+              }
+
+              send({ type: "done", text: fullText, model: `${provider.name}:${model}` });
+              controller.close();
+              return;
+            } catch (error) {
+              lastError = error;
+              console.warn(`${provider.name} model failed: ${model}`, error);
+            }
+          }
         }
 
-        send({ type: "done", text: fullText, model: successfulModel });
+        const friendlyMessage =
+          lastError instanceof Error && lastError.message.includes("429")
+            ? "The AI service is rate-limited right now. Please try again in a moment."
+            : "The AI service is temporarily unavailable. Please try again in a moment.";
+
+        send({ type: "error", message: friendlyMessage });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Stream failed.";
         send({ type: "error", message });

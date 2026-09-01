@@ -25,6 +25,9 @@ OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct
 ## Layer 1 status
 - [x] Provider abstraction (`src/lib/llm.ts`) — Gemini/DeepSeek/OpenRouter by env var
 - [x] SSE streaming route (`src/app/api/chat/route.ts`) — token-by-token, abort forwarded, 60s cap
+- [x] Multi-provider failover — tries OpenRouter → Gemini → DeepSeek automatically
 - [x] Versioned system prompt (`src/prompts/system-v1.md`, canonical at repo-root `prompts/`)
-- [x] Chat UI: token render, stop button, error + retry, dev token counter
+- [x] Chat UI with markdown rendering (`src/components/MarkdownMessage.tsx`)
+- [x] Local chat storage (`src/lib/chatStorage.ts`)
+- [x] Request validation and history capping (max 20 messages)
 - [ ] Early smoke-test deploy to Vercel (Week 2)

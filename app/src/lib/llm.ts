@@ -29,7 +29,7 @@ function getGeminiApiKeys(): string[] {
  * swap LLM_PROVIDER and the model env, and everything follows.
  */
 function getConfig(): ProviderConfig {
-  const provider = (process.env.LLM_PROVIDER ?? "gemini").toLowerCase();
+  const provider = (process.env.LLM_PROVIDER ?? "openrouter").toLowerCase();
 
   if (provider === "deepseek") {
     return {
@@ -40,20 +40,20 @@ function getConfig(): ProviderConfig {
     };
   }
 
-  if (provider === "openrouter") {
+  if (provider === "gemini") {
     return {
-      name: "openrouter",
-      apiKey: process.env.OPENROUTER_API_KEY ?? "",
-      baseURL: "https://openrouter.ai/api/v1",
-      model: process.env.OPENROUTER_MODEL ?? "openai/gpt-oss-20b:free",
+      name: "gemini",
+      apiKey: getGeminiApiKeys()[0] ?? "",
+      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+      model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
     };
   }
 
   return {
-    name: "gemini",
-    apiKey: getGeminiApiKeys()[0] ?? "",
-    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-    model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+    name: "openrouter",
+    apiKey: process.env.OPENROUTER_API_KEY ?? "",
+    baseURL: "https://openrouter.ai/api/v1",
+    model: process.env.OPENROUTER_MODEL ?? "openai/gpt-4o-mini",
   };
 }
 

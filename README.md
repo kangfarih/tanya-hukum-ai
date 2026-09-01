@@ -14,18 +14,28 @@ Legal answers are buried in unstructured Indonesian regulations (UU, PP, Perpres
 A normal search UI can't answer questions like *"Apa sanksi keterlambatan pelaporan?"* —
 especially across documents, in Indonesian **or** English, with a citation back to the source.
 
+## Current status
+
+Layer 1 is complete: a streaming chat UI with resilient multi-provider AI backend.
+
+- ✅ Streaming chat interface with markdown rendering
+- ✅ Multi-provider failover (OpenRouter → Gemini → DeepSeek)
+- ✅ Request validation and history capping
+- ✅ Versioned system prompts
+- 🔄 Corpus: 10 official JDIHN documents acquired and verified
+- ⬜ Retrieval-augmented generation (RAG)
+- ⬜ Vector storage and embedding
+- ⬜ Evaluation pipeline
+
 ## Approach
 
-RAG over a curated corpus of official Indonesian public legal documents:
+Planned RAG pipeline over a curated corpus of official Indonesian public legal documents:
 
 ```
 parse → chunk → embed → hybrid retrieve → cite → evaluate
 ```
 
-- **Corpus:** official JDIHN documents (see [`corpus/`](corpus/README.md))
-- **Storage:** one interface — Chroma (local dev) → pgvector on Neon (prod)
-- **Models:** Gemini Flash (free) generation · DeepSeek (fallback + judge) · multilingual embeddings
-- **Evals:** ground-truth dataset + graders, run in CI on every PR
+Currently implemented: **streaming chat with multi-provider failover** (no retrieval yet).
 
 ## Architecture
 
@@ -41,19 +51,19 @@ yarn install
 yarn dev
 ```
 
-Required env values:
+Required env values (see [`app/.env.local.example`](app/.env.local.example)):
 
 ```env
 LLM_PROVIDER=openrouter
 OPENROUTER_API_KEY=your_openrouter_key
-OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct:free
+OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct
 ```
 
 Fallback model order used by the route:
 
-1. `meta-llama/llama-3.3-70b-instruct:free`
-2. `deepseek/deepseek-r1:free`
-3. `google/gemini-2.0-flash-exp:free`
+1. `meta-llama/llama-3.3-70b-instruct`
+2. `gemini-2.5-flash`
+3. `deepseek-chat`
 
 The route accepts JSON in this shape:
 
@@ -83,6 +93,7 @@ pennies-level DeepSeek fallback for evals/judge.
 
 ## What I'd do next
 
+- Retrieval-augmented generation (RAG) with vector search
 - Personal document upload (currently read-only over the curated corpus — deliberate scoping)
 - Tool-calling to cross-reference amended/repealed articles
 - Proactive monitoring of new regulations (JDIHN feed)
@@ -92,10 +103,15 @@ pennies-level DeepSeek fallback for evals/judge.
 ```
 tanya-hukum-ai/
 ├── app/          # Next.js (UI + API routes) — Layer 1
-├── pipeline/     # Python: corpus fetch, ingestion, evals (local + CI)
+│   ├── src/
+│   │   ├── app/           # Pages and API routes
+│   │   ├── components/    # React components
+│   │   └── lib/           # Utilities (llm.ts, prompt.ts, chatStorage.ts)
+│   └── hooks/             # React hooks
+├── pipeline/     # Python: corpus fetch and ingestion
 ├── corpus/       # sources.jsonl manifest + pdf/
 ├── prompts/      # versioned system prompts
-├── evals/        # dataset.jsonl + results
+├── evals/        # trial-qa.jsonl + results
 └── ...
 ```
 

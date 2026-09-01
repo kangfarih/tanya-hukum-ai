@@ -3,7 +3,7 @@ import Link from "next/link";
 const projectHighlights = [
   "Legal Q&A over a curated Indonesian legal corpus",
   "Streaming AI responses with multi-provider failover",
-  "Gemini first, then OpenRouter, then DeepSeek for resilience",
+  "OpenRouter first, then Gemini, then DeepSeek for resilience",
   "Portfolio-ready architecture for explainable legal answers",
 ];
 
@@ -63,8 +63,8 @@ export default function ProjectDocPage() {
             AI order
           </p>
           <ul className="mt-2 space-y-1 text-sm text-zinc-600 dark:text-zinc-300">
-            <li>Gemini first</li>
-            <li>OpenRouter second</li>
+            <li>OpenRouter first</li>
+            <li>Gemini second</li>
             <li>DeepSeek last</li>
           </ul>
         </div>

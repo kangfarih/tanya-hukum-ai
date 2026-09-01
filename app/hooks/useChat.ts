@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type ChatRole = "user" | "assistant";
 
@@ -16,20 +16,45 @@ interface StreamEvent {
   message?: string;
 }
 
+function parseSseEvents(buffer: string): { events: StreamEvent[]; remainder: string } {
+  const events: StreamEvent[] = [];
+  const parts = buffer.split("\n\n");
+  const remainder = parts.pop() ?? "";
+
+  for (const part of parts) {
+    const lines = part.split("\n").map((line) => line.trim());
+    const payload = lines.find((line) => line.startsWith("data:"))?.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+
+    try {
+      const event = JSON.parse(payload) as StreamEvent;
+      events.push(event);
+    } catch {
+      // Ignore malformed SSE frames; keep buffering until the full frame arrives.
+    }
+  }
+
+  return { events, remainder };
+}
+
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const messagesRef = useRef<ChatMessage[]>([]);
 
-  const sendMessage = useCallback(async (input: string) => {
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const sendMessage = useCallback(async (input: string, baseMessages?: ChatMessage[]) => {
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
 
-    const nextUserMessage: ChatMessage = { role: "user", content: trimmed };
-    const nextMessages = [...messages, nextUserMessage];
+    const activeMessages = baseMessages ?? messagesRef.current;
+    const nextMessages = baseMessages ? activeMessages : [...activeMessages, { role: "user", content: trimmed }];
 
-    setMessages(nextMessages);
     setIsLoading(true);
     setError(null);
 
@@ -38,6 +63,7 @@ export function useChat() {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    let finalText = "";
 
     try {
       const response = await fetch("/api/chat", {
@@ -57,53 +83,78 @@ export function useChat() {
       let buffer = "";
 
       while (true) {
+        if (controller.signal.aborted) {
+          throw new DOMException("The request was aborted.", "AbortError");
+        }
+
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n");
+        buffer += decoder.decode(value, { stream: true });
+        const parsed = parseSseEvents(buffer);
+        buffer = parsed.remainder;
 
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
+        for (const event of parsed.events) {
+          if (event.type === "token" && event.delta) {
+            finalText += event.delta;
+            setMessages((prev) => {
+              const updated = [...prev];
+              const lastIndex = updated.length - 1;
+              if (lastIndex < 0 || updated[lastIndex]?.role !== "assistant") return prev;
+              updated[lastIndex] = { role: "assistant", content: finalText };
+              return updated;
+            });
+          }
 
-          try {
-            const event = JSON.parse(line.slice(6)) as StreamEvent;
+          if (event.type === "error" && event.message) {
+            throw new Error(event.message);
+          }
 
-            if (event.type === "token" && event.delta) {
-              buffer += event.delta;
-              setMessages((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = { role: "assistant", content: buffer };
-                return updated;
-              });
-            }
+          if (event.type === "done") {
+            finalText = event.text ?? finalText;
+            setMessages((prev) => {
+              const updated = [...prev];
+              const lastIndex = updated.length - 1;
+              if (lastIndex < 0 || updated[lastIndex]?.role !== "assistant") return prev;
+              updated[lastIndex] = { role: "assistant", content: finalText };
+              return updated;
+            });
+          }
+        }
+      }
 
-            if (event.type === "error" && event.message) {
-              throw new Error(event.message);
-            }
-
-            if (event.type === "done") {
-              setMessages((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = {
-                  role: "assistant",
-                  content: event.text ?? buffer,
-                };
-                return updated;
-              });
-            }
-          } catch {
-            // Ignore malformed SSE frames; the stream should still continue.
+      if (buffer.trim()) {
+        const parsed = parseSseEvents(`${buffer}\n\n`);
+        for (const event of parsed.events) {
+          if (event.type === "token" && event.delta) {
+            finalText += event.delta;
+          }
+          if (event.type === "done") {
+            finalText = event.text ?? finalText;
           }
         }
       }
     } catch (err) {
+      const isAbort = err instanceof DOMException && err.name === "AbortError";
+      if (isAbort) {
+        setMessages((prev) => {
+          const updated = [...prev];
+          const lastIndex = updated.length - 1;
+          if (lastIndex < 0 || updated[lastIndex]?.role !== "assistant") return prev;
+          updated[lastIndex] = { role: "assistant", content: "Stopped." };
+          return updated;
+        });
+        return;
+      }
+
       const nextError = err instanceof Error ? err.message : "Something went wrong.";
       setError(nextError);
       setMessages((prev) => {
         if (prev.length === 0) return prev;
         const updated = [...prev];
-        updated[updated.length - 1] = {
+        const lastIndex = updated.length - 1;
+        if (lastIndex < 0 || updated[lastIndex]?.role !== "assistant") return prev;
+        updated[lastIndex] = {
           role: "assistant",
           content: nextError,
         };
@@ -113,7 +164,7 @@ export function useChat() {
       abortRef.current = null;
       setIsLoading(false);
     }
-  }, [isLoading, messages]);
+  }, [isLoading]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -123,6 +174,7 @@ export function useChat() {
 
   return {
     messages,
+    setMessages,
     sendMessage,
     isLoading,
     error,
