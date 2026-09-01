@@ -24,9 +24,30 @@ export interface StreamEvent {
 }
 
 const OPENROUTER_MODELS = [
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "deepseek/deepseek-r1:free",
-  "google/gemini-2.0-flash-exp:free",
+  "meta-llama/llama-3.3-70b-instruct",
+  "deepseek/deepseek-r1",
+  "openai/gpt-4o-mini",
+] as const;
+
+const EXTRA_PROVIDER_MODELS = [
+  {
+    name: "gemini",
+    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    apiKey: process.env.GEMINI_API_KEYS?.split(",")[0]?.trim() ?? process.env.GEMINI_API_KEY ?? "",
+    models: ["models/gemini-3.6-flash", "gemini-2.5-flash"],
+  },
+  {
+    name: "openrouter",
+    baseURL: "https://openrouter.ai/api/v1",
+    apiKey: process.env.OPENROUTER_API_KEY ?? "",
+    models: ["meta-llama/llama-3.3-70b-instruct", "deepseek/deepseek-r1", "openai/gpt-4o-mini"],
+  },
+  {
+    name: "deepseek",
+    baseURL: "https://api.deepseek.com",
+    apiKey: process.env.DEEPSEEK_API_KEY ?? "",
+    models: ["deepseek-chat"],
+  },
 ] as const;
 
 const MAX_HISTORY = 20;
@@ -88,40 +109,46 @@ export async function POST(req: NextRequest) {
     return jsonError(400, message);
   }
 
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    return jsonError(503, "OpenRouter is not configured. Please add OPENROUTER_API_KEY.");
-  }
-
-  const client = new OpenAI({
-    apiKey,
-    baseURL: "https://openrouter.ai/api/v1",
-  });
+  const providers = [...EXTRA_PROVIDER_MODELS];
 
   let successfulModel = "";
   let successfulStream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk> | null = null;
   let lastError: unknown = null;
 
-  // Try the primary model first, then fall back through the list if it hits rate limits or any other error.
-  for (const model of OPENROUTER_MODELS) {
-    try {
-      const stream = await client.chat.completions.create(
-        {
-          model,
-          messages: requestBody.messages,
-          stream: true,
-        },
-        { signal: req.signal }
-      );
-
-      successfulModel = model;
-      successfulStream = stream;
-      console.log(`OpenRouter responded via model: ${model}`);
-      break;
-    } catch (error) {
-      lastError = error;
-      console.warn(`OpenRouter model failed: ${model}`, error);
+  // Try the next AI backend when a model fails, so the app keeps recovering instead of failing immediately.
+  for (const provider of providers) {
+    if (!provider.apiKey) {
+      console.warn(`Skipping ${provider.name}: no API key configured.`);
+      continue;
     }
+
+    const client = new OpenAI({
+      apiKey: provider.apiKey,
+      baseURL: provider.baseURL,
+    });
+
+    for (const model of provider.models) {
+      try {
+        const stream = await client.chat.completions.create(
+          {
+            model,
+            messages: requestBody.messages,
+            stream: true,
+          },
+          { signal: req.signal }
+        );
+
+        successfulModel = `${provider.name}:${model}`;
+        successfulStream = stream;
+        console.log(`AI response succeeded via ${successfulModel}`);
+        break;
+      } catch (error) {
+        lastError = error;
+        console.warn(`${provider.name} model failed: ${model}`, error);
+      }
+    }
+
+    if (successfulStream) break;
   }
 
   if (!successfulStream || !successfulModel) {

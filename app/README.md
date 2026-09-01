@@ -6,22 +6,20 @@ Streaming chat UI + API routes. The only always-on host (Vercel, Hobby/free).
 - Next.js (App Router) + TypeScript + Tailwind
 - `openai` SDK against **OpenAI-compatible** providers: Gemini, DeepSeek, or OpenRouter, switched by `LLM_PROVIDER`
 - Gemini accepts either a single key or multiple comma-separated keys for automatic failover
-- OpenRouter supports many free/open models; check the live model list because free offerings change often
+- OpenRouter models can change frequently; avoid stale `:free` slugs that return 404s
 
 ## Run it
 ```bash
 cp .env.local.example .env.local   # add GEMINI_API_KEY/GEMINI_API_KEYS, OPENROUTER_API_KEY, and/or DEEPSEEK_API_KEY
-npm install
-npm run dev
+yarn install
+yarn dev
 ```
 
-## Common free model examples
+## Working OpenRouter model examples
 ```env
-# OpenRouter free examples
-OPENROUTER_MODEL=openai/gpt-oss-20b:free
-# OPENROUTER_MODEL=google/gemini-2.0-flash-exp:free
-# OPENROUTER_MODEL=meta-llama/llama-3.1-8b-instruct:free
-# OPENROUTER_MODEL=microsoft/phi-3-mini-4k-instruct:free
+OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct
+# OPENROUTER_MODEL=deepseek/deepseek-r1
+# OPENROUTER_MODEL=openai/gpt-4o-mini
 ```
 
 ## Layer 1 status

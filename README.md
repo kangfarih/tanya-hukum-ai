@@ -33,13 +33,12 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Local app quickstart
 
-The web app lives in [`app/`](app/README.md) and uses a streaming chat API with OpenRouter failover.
+The web app lives in [`app/`](app/README.md) and uses a streaming chat API with OpenRouter failover. Use Yarn for install and local dev.
 
 ```bash
 cd app
-cp .env.local.example .env.local
-npm install
-npm run dev
+yarn install
+yarn dev
 ```
 
 Required env values:
