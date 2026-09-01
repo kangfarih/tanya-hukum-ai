@@ -798,7 +798,7 @@ function HomeContent() {
                           <button
                             type="button"
                             onClick={() => void handleEditAndResend(index)}
-                            className="rounded p-1.5 text-zinc-700 hover:bg-zinc-900 hover:text-white dark:text-zinc-300 dark:hover:bg-zinc-100 dark:hover:text-zinc-900"
+                            className="rounded bg-white p-1.5 text-black hover:bg-zinc-800 hover:text-white dark:bg-zinc-200 dark:text-black dark:hover:bg-zinc-700"
                             title="Resend"
                           >
                             <SendIcon />
@@ -809,7 +809,7 @@ function HomeContent() {
                               setEditingIndex(null);
                               setEditDraft("");
                             }}
-                            className="rounded p-1.5 text-zinc-500 hover:bg-zinc-900 hover:text-white dark:text-zinc-400 dark:hover:bg-zinc-100 dark:hover:text-zinc-900"
+                            className="rounded bg-white p-1.5 text-black hover:bg-zinc-800 hover:text-white dark:bg-zinc-200 dark:text-black dark:hover:bg-zinc-700"
                             title="Cancel"
                           >
                             <CloseIcon />
