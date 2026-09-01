@@ -39,14 +39,6 @@ const sourceCatalog: Record<number, CitationSource> = {
   },
 };
 
-const defaultSuggestions = [
-  "Apa sanksi keterlambatan pelaporan pajak?",
-  "Bagaimana prosedur pengajuan keberatan?",
-  "Apa perbedaan sengketa administrasi dan pidana?",
-  "Apa yang dimaksud dengan pasal 27 UU ITE?",
-];
-
-const SUGGESTIONS_CACHE_KEY = "tanyahukum.suggestions.v1";
 
 function getCitationIds(content: string): number[] {
   const ids = Array.from(content.matchAll(/\[\^(\d+)\]/g), (match) => Number(match[1]));
@@ -252,7 +244,7 @@ export default function Home() {
 
 function HomeContent() {
   const [input, setInput] = useState("");
-  const [suggestions, setSuggestions] = useState<string[]>(defaultSuggestions);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [conversations, setConversations] = useLocalStorage<ChatConversation[]>(
     "tanyahukum.chats.v1",
     [],
@@ -304,19 +296,10 @@ function HomeContent() {
     );
   }, [messages, isLoading, activeChatId, setConversations]);
   const isEmpty = currentMessages.length === 0;
-  // Load suggestions from cache or generate new ones
+  // Load suggestions from API
   useEffect(() => {
     const loadSuggestions = async () => {
       try {
-        // Check cache first
-        const cached = window.localStorage.getItem(SUGGESTIONS_CACHE_KEY);
-        if (cached) {
-          const parsed = JSON.parse(cached) as string[];
-          setSuggestions(parsed);
-          return;
-        }
-
-        // Generate new suggestions
         const response = await fetch("/api/suggestions");
         if (!response.ok) {
           console.error("Suggestions API error:", response.status);
@@ -341,14 +324,14 @@ function HomeContent() {
 
         if (nextSuggestions.length > 0) {
           setSuggestions(nextSuggestions);
-          window.localStorage.setItem(SUGGESTIONS_CACHE_KEY, JSON.stringify(nextSuggestions));
           return;
         }
 
         throw new Error("Suggestions payload was empty");
       } catch (error) {
         console.error("Failed to load suggestions:", error);
-        setSuggestions(defaultSuggestions);
+        // Keep empty suggestions on error
+        setSuggestions([]);
       }
     };
 
@@ -600,11 +583,10 @@ function HomeContent() {
                 const confirmed = window.confirm('Hapus semua riwayat chat dan cache lokal?');
                 if (!confirmed) return;
                 window.localStorage.removeItem('tanyahukum.chats.v1');
-                window.localStorage.removeItem('tanyahukum.suggestions.v1');
                 setConversations([]);
                 setMessages([]);
                 setActiveChatId(null);
-                setSuggestions(defaultSuggestions);
+                setSuggestions([]);
               }
             }}
             className="flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-left text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
