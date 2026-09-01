@@ -18,4 +18,4 @@ Curated Indonesian public legal/regulatory documents (UU, PP, Perpres).
 
 ## Next (still open)
 
-- [ ] Write 10 trial Q/A pairs against the corpus — facts must be unambiguous (gates evals)
+- [x] Write 10 trial Q/A pairs against the corpus — facts are unambiguous (gates evals) → see [`evals/trial-qa.jsonl`](../evals/trial-qa.jsonl)

@@ -3,6 +3,13 @@
 Ground truth comes from the corpus: every Q/A pair is human-verified against a source
 document. This is what makes the project hireable — do not skip it.
 
+## Week 1 — trial set (done)
+
+- [`trial-qa.jsonl`](trial-qa.jsonl) — **10 Q/A pairs** verified against the corpus
+  (factual ×6, follow-up, ambiguous, out-of-scope, adversarial; includes 1 EN/bilingual).
+  Confirms ground-truth-ability — the L0 gate.
+- These seed `dataset.jsonl` and get expanded to 80–100 questions in Layer 4.
+
 ## Planned
 
 - `dataset.jsonl` — **80–100 real questions** with expected answers
