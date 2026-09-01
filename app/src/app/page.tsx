@@ -82,6 +82,26 @@ function ThreeDotIcon() {
   );
 }
 
+function CopyIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+
+function RegenerateIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+      <path d="M16 16h5v5" />
+    </svg>
+  );
+}
+
 function ChatMenu({
   onEdit,
   onDelete,
@@ -713,17 +733,7 @@ function HomeContent() {
                       ) : null}
 
                       {!isLoading && (
-                        <div className="flex flex-wrap items-center gap-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(content).catch(() => undefined);
-                            }}
-                            className="text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
-                          >
-                            Copy
-                          </button>
-
+                        <div className="flex flex-wrap items-center gap-1 pt-1">
                           <button
                             type="button"
                             onClick={() => {
@@ -732,9 +742,21 @@ function HomeContent() {
                               if (!lastUser) return;
                               void sendMessage(lastUser.content);
                             }}
-                            className="text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+                            className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                            title="Regenerate"
                           >
-                            Regenerate
+                            <RegenerateIcon />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(content).catch(() => undefined);
+                            }}
+                            className="rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                            title="Copy"
+                          >
+                            <CopyIcon />
                           </button>
                         </div>
                       )}
@@ -790,9 +812,10 @@ function HomeContent() {
                           setEditingIndex(index);
                           setEditDraft(content);
                         }}
-                        className="text-xs font-medium text-zinc-300 underline-offset-2 hover:underline dark:text-zinc-400"
+                        className="inline-flex items-center gap-1 rounded p-1 text-xs text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                        title="Edit & resend"
                       >
-                        Edit & resend
+                        <EditIcon />
                       </button>
                     )}
                   </div>
