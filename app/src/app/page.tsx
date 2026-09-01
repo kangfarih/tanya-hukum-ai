@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { ReduxProvider } from "../components/ReduxProvider";
 import { useSessionChat } from "../../hooks/useSessionChat";
+import type { ChatSession } from "../lib/redux/slices/sessionSlice";
 
 type CitationSource = {
   id: number;
@@ -224,7 +225,7 @@ function HomeContent() {
   } = useSessionChat();
 
   const groupedConversations = useMemo(() => {
-    const groups: Record<string, typeof allSessions> = {
+    const groups: Record<string, ChatSession[]> = {
       "Hari ini": [],
       "Kemarin": [],
       "7 hari terakhir": [],
@@ -672,7 +673,7 @@ function HomeContent() {
             {isLoading ? (
               <button
                 type="button"
-                onClick={stop}
+                onClick={() => stop()}
                 aria-label="Stop generating"
                 className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
               >

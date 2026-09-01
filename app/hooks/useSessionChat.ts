@@ -17,6 +17,7 @@ import {
   selectActiveSession,
   selectAllSessionsSorted,
   type ChatMessage,
+  type ChatSession,
 } from "../src/lib/redux/slices/sessionSlice";
 
 interface StreamEvent {
@@ -48,22 +49,33 @@ function parseSseEvents(buffer: string): { events: StreamEvent[]; remainder: str
   return { events, remainder };
 }
 
+// Track active requests per session
+const activeControllers = new Map<string, AbortController>();
+
 export function useSessionChat() {
   const dispatch = useDispatch<AppDispatch>();
   const activeSession = useSelector(selectActiveSession);
   const allSessions = useSelector(selectAllSessionsSorted);
   const activeSessionId = useSelector((state: RootState) => state.sessions.activeSessionId);
   
-  const abortRef = useRef<AbortController | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Clean up abort controller on unmount
+  // Clean up all abort controllers on unmount
   useEffect(() => {
     return () => {
-      abortRef.current?.abort();
+      activeControllers.forEach((controller) => controller.abort());
+      activeControllers.clear();
     };
   }, []);
+
+  // Check if a specific session is loading
+  const isSessionLoading = useCallback((sessionId: string) => {
+    const session = allSessions.find(s => s.id === sessionId);
+    return session?.status === "streaming" || session?.status === "sending";
+  }, [allSessions]);
+
+  // Get loading state for active session
+  const isLoading = activeSessionId ? isSessionLoading(activeSessionId) : false;
 
   const createNewSession = useCallback(async (title?: string) => {
     const sessionId = uuidv4();
@@ -98,11 +110,11 @@ export function useSessionChat() {
     }
   }, [dispatch]);
 
-  const sendMessage = useCallback(async (input: string) => {
+  const sendMessage = useCallback(async (input: string, targetSessionId?: string) => {
     const trimmed = input.trim();
-    if (!trimmed || isLoading) return;
+    if (!trimmed) return;
 
-    let sessionId = activeSessionId;
+    let sessionId = targetSessionId || activeSessionId;
     let isNewSession = false;
 
     // Create session if none exists
@@ -113,11 +125,12 @@ export function useSessionChat() {
 
     if (!sessionId) return;
 
-    setIsLoading(true);
+    // Don't send if this specific session is already loading
+    if (isSessionLoading(sessionId)) return;
+
     setError(null);
 
     // Get existing messages BEFORE adding new ones
-    // For new sessions, there are no existing messages
     const existingSession = isNewSession ? null : allSessions.find(s => s.id === sessionId);
     const existingMessages = existingSession?.messages ?? [];
     
@@ -126,6 +139,18 @@ export function useSessionChat() {
       ...existingMessages.map(m => ({ role: m.role, content: m.content })),
       { role: "user" as const, content: trimmed },
     ];
+
+    // Update session title from first message
+    if (existingMessages.length === 0 && sessionId) {
+      const title = trimmed.length > 40 ? trimmed.slice(0, 37).trim() + "..." : trimmed;
+      dispatch(renameSessionAction({ sessionId, title }));
+      // Also update on server
+      fetch(`/api/sessions/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      }).catch(() => {});
+    }
 
     // Add user message to Redux
     dispatch(appendMessage({
@@ -142,7 +167,7 @@ export function useSessionChat() {
     dispatch(setSessionStatus({ sessionId, status: "streaming" }));
 
     const controller = new AbortController();
-    abortRef.current = controller;
+    activeControllers.set(sessionId, controller);
 
     try {
       const response = await fetch("/api/chat", {
@@ -217,22 +242,29 @@ export function useSessionChat() {
         dispatch(setSessionError({ sessionId, error: message }));
       }
     } finally {
-      abortRef.current = null;
-      setIsLoading(false);
+      activeControllers.delete(sessionId);
     }
-  }, [activeSessionId, allSessions, isLoading, dispatch, createNewSession]);
+  }, [activeSessionId, allSessions, dispatch, createNewSession, isSessionLoading]);
 
-  const stop = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setIsLoading(false);
-  }, []);
+  const stop = useCallback((sessionId?: string) => {
+    const targetId = sessionId || activeSessionId;
+    if (targetId) {
+      const controller = activeControllers.get(targetId);
+      if (controller) {
+        controller.abort();
+        activeControllers.delete(targetId);
+      }
+    }
+  }, [activeSessionId]);
 
   const selectSession = useCallback((sessionId: string) => {
     dispatch(setActiveSession(sessionId || null));
   }, [dispatch]);
 
   const deleteSession = useCallback(async (sessionId: string) => {
+    // Stop any active stream for this session
+    stop(sessionId);
+    
     // Delete from server
     try {
       await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
@@ -242,7 +274,7 @@ export function useSessionChat() {
     
     // Delete from Redux
     dispatch(deleteSessionAction(sessionId));
-  }, [dispatch]);
+  }, [dispatch, stop]);
 
   const renameSession = useCallback(async (sessionId: string, title: string) => {
     // Rename on server
@@ -263,14 +295,15 @@ export function useSessionChat() {
   return {
     activeSession: activeSession ?? null,
     activeSessionId,
-    allSessions,
+    allSessions: allSessions as ChatSession[],
     isLoading,
     error,
+    isSessionLoading,
     sendMessage,
     stop,
     selectSession,
     deleteSession,
     renameSession,
     createNewSession,
-  };
+  } as const;
 }
