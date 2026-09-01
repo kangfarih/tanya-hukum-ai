@@ -22,7 +22,7 @@ export interface ChatSession {
   updatedAt: number;
 }
 
-interface SessionState {
+export interface SessionState {
   sessions: Record<string, ChatSession>;
   activeSessionId: string | null;
 }
@@ -50,7 +50,7 @@ const sessionSlice = createSlice({
   name: "sessions",
   initialState,
   reducers: {
-    createSession: (state, action: PayloadAction<{ title?: string; sessionId?: string } | void>) => {
+    createSession: (state, action: PayloadAction<{ title?: string; sessionId?: string } | undefined>) => {
       const sessionId = action.payload?.sessionId ?? generateSessionId();
       const title = action.payload?.title ?? "New chat";
       const now = Date.now();

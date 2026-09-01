@@ -4,16 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { MarkdownMessage } from "../components/MarkdownMessage";
-import { useChat } from "../../hooks/useChat";
 import { ReduxProvider } from "../components/ReduxProvider";
-import {
-  buildConversationTitle,
-  createConversationFromMessages,
-  deleteChat,
-  saveChat,
-  type ChatConversation,
-  type ChatMessage,
-} from "../lib/chatStorage";
+import { useSessionChat } from "../../hooks/useSessionChat";
 
 type CitationSource = {
   id: number;
@@ -39,7 +31,6 @@ const sourceCatalog: Record<number, CitationSource> = {
   },
 };
 
-
 function getCitationIds(content: string): number[] {
   const ids = Array.from(content.matchAll(/\[\^(\d+)\]/g), (match) => Number(match[1]));
   return [...new Set(ids)].sort((left, right) => left - right);
@@ -47,10 +38,6 @@ function getCitationIds(content: string): number[] {
 
 function stripCitationMarkers(content: string): string {
   return content.replace(/\[\^(\d+)\]/g, "").trim();
-}
-
-function sortConversations(items: ChatConversation[]) {
-  return [...items].sort((left, right) => right.updatedAt - left.updatedAt);
 }
 
 function groupConversationDateLabel(date: number) {
@@ -62,35 +49,6 @@ function groupConversationDateLabel(date: number) {
   if (diff < oneDay * 2) return "Kemarin";
   if (diff < oneDay * 7) return "7 hari terakhir";
   return "Sebelumnya";
-}
-
-type SetValue<T> = T | ((prev: T) => T);
-
-function useLocalStorage<T>(key: string, initialValue: T): [T, (value: SetValue<T>) => void] {
-  const [storedValue, setStoredValue] = useState<T>(() => {
-    if (typeof window === "undefined") return initialValue;
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? (JSON.parse(item) as T) : initialValue;
-    } catch {
-      return initialValue;
-    }
-  });
-
-  const setValue = useCallback(
-    (value: SetValue<T>) => {
-      setStoredValue((prev) => {
-        const nextValue = typeof value === "function" ? (value as (prev: T) => T)(prev) : value;
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem(key, JSON.stringify(nextValue));
-        }
-        return nextValue;
-      });
-    },
-    [key],
-  );
-
-  return [storedValue, setValue];
 }
 
 function ThreeDotIcon() {
@@ -245,57 +203,43 @@ export default function Home() {
 function HomeContent() {
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [conversations, setConversations] = useLocalStorage<ChatConversation[]>(
-    "tanyahukum.chats.v1",
-    [],
-  );
-  const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState("");
-  const { messages, setMessages, sendMessage, isLoading, error, stop } = useChat();
 
-  const sortedConversations = useMemo(() => sortConversations(conversations), [conversations]);
-
-  const activeConversation = useMemo(
-    () => conversations.find((chat) => chat.id === activeChatId) ?? null,
-    [activeChatId, conversations],
-  );
+  const {
+    activeSession,
+    activeSessionId,
+    allSessions,
+    isLoading,
+    error,
+    sendMessage,
+    stop,
+    selectSession,
+    deleteSession,
+    renameSession,
+  } = useSessionChat();
 
   const groupedConversations = useMemo(() => {
-    const groups: Record<string, ChatConversation[]> = {
+    const groups: Record<string, typeof allSessions> = {
       "Hari ini": [],
       "Kemarin": [],
       "7 hari terakhir": [],
       "Sebelumnya": [],
     };
 
-    for (const chat of sortedConversations) {
-      groups[groupConversationDateLabel(chat.updatedAt)]?.push(chat);
+    for (const session of allSessions) {
+      groups[groupConversationDateLabel(session.updatedAt)]?.push(session);
     }
 
     return groups;
-  }, [sortedConversations]);
+  }, [allSessions]);
 
-  const currentMessages = messages.length > 0 ? messages : activeConversation?.messages ?? [];
-
-  // Sync messages to conversations when response completes
-  useEffect(() => {
-    if (!activeChatId || isLoading || messages.length === 0) return;
-
-    setConversations((prev) =>
-      sortConversations(
-        prev.map((chat) =>
-          chat.id === activeChatId
-            ? { ...chat, messages, updatedAt: Date.now() }
-            : chat,
-        ),
-      ),
-    );
-  }, [messages, isLoading, activeChatId, setConversations]);
+  const currentMessages = activeSession?.messages ?? [];
   const isEmpty = currentMessages.length === 0;
+
   // Load suggestions from API
   useEffect(() => {
     const loadSuggestions = async () => {
@@ -330,7 +274,6 @@ function HomeContent() {
         throw new Error("Suggestions payload was empty");
       } catch (error) {
         console.error("Failed to load suggestions:", error);
-        // Keep empty suggestions on error
         setSuggestions([]);
       }
     };
@@ -344,130 +287,46 @@ function HomeContent() {
     const value = input.trim();
     if (!value) return;
 
-    const title = buildConversationTitle(value);
-
-    setConversations((prev) => {
-      let targetId = activeChatId;
-      let targetConversation = prev.find((chat) => chat.id === targetId) ?? null;
-
-      if (!targetId) {
-        const created = createConversationFromMessages();
-        targetId = created.id;
-        targetConversation = created;
-        prev = [created, ...prev];
-      }
-
-      const baseMessages: ChatMessage[] = targetConversation?.messages ?? [];
-      const nextMessages: ChatMessage[] = [...baseMessages, { role: "user", content: value }];
-      const finalTitle = targetConversation?.title === "New chat" ? title : targetConversation?.title ?? title;
-
-      setActiveChatId(targetId);
-      setMessages(nextMessages);
-      setInput("");
-      setSidebarOpen(false);
-
-      void sendMessage(value, nextMessages);
-
-      return sortConversations(
-        prev.map((chat) => (chat.id === targetId ? { ...chat, title: finalTitle, messages: nextMessages, updatedAt: Date.now() } : chat)),
-      );
-    });
+    setInput("");
+    setSidebarOpen(false);
+    await sendMessage(value);
   }
 
   async function handleSuggestionClick(value: string) {
-    const title = buildConversationTitle(value);
-
-    setConversations((prev) => {
-      let targetId = activeChatId;
-      let targetConversation = prev.find((chat) => chat.id === targetId) ?? null;
-
-      if (!targetId) {
-        const created = createConversationFromMessages();
-        targetId = created.id;
-        targetConversation = created;
-        prev = [created, ...prev];
-      }
-
-      const baseMessages: ChatMessage[] = targetConversation?.messages ?? [];
-      const nextMessages: ChatMessage[] = [...baseMessages, { role: "user", content: value }];
-      const finalTitle = targetConversation?.title === "New chat" ? title : targetConversation?.title ?? title;
-
-      setActiveChatId(targetId);
-      setMessages(nextMessages);
-      setInput("");
-      setSidebarOpen(false);
-
-      void sendMessage(value, nextMessages);
-
-      return sortConversations(
-        prev.map((chat): ChatConversation =>
-          chat.id === targetId ? { ...chat, title: finalTitle, messages: nextMessages, updatedAt: Date.now() } : chat,
-        ),
-      );
-    });
+    setInput("");
+    setSidebarOpen(false);
+    await sendMessage(value);
   }
 
   async function handleEditAndResend(index: number) {
     const nextValue = editDraft.trim();
-    if (!nextValue || !activeChatId) return;
-
-    const nextMessages: ChatMessage[] = currentMessages.slice(0, index);
-    nextMessages.push({ role: "user", content: nextValue });
+    if (!nextValue || !activeSessionId) return;
 
     setEditingIndex(null);
     setEditDraft("");
-    setMessages(nextMessages);
-    setConversations((prev) =>
-      sortConversations(
-        prev.map((chat): ChatConversation =>
-          chat.id === activeChatId
-            ? { ...chat, messages: nextMessages, updatedAt: Date.now(), title: chat.title === "New chat" ? buildConversationTitle(nextValue) : chat.title }
-            : chat,
-        ),
-      ),
-    );
-    await sendMessage(nextValue, nextMessages);
+    await sendMessage(nextValue);
   }
 
   function handleNewChat() {
-    setActiveChatId(null);
-    setMessages([]);
+    selectSession("");
     setSidebarOpen(false);
   }
 
-  function handleSelectChat(chatId: string) {
-    const nextActive = conversations.find((chat) => chat.id === chatId);
-    setActiveChatId(chatId);
-    setMessages(nextActive?.messages ?? []);
+  function handleSelectChat(sessionId: string) {
+    selectSession(sessionId);
     setSidebarOpen(false);
     setRenameId(null);
   }
 
-  function handleDeleteChat(chatId: string) {
-    setConversations((prev) => {
-      const next = prev.filter((chat) => chat.id !== chatId);
-      if (chatId === activeChatId) {
-        const nextActive = next[0] ?? null;
-        setActiveChatId(nextActive?.id ?? null);
-        setMessages(nextActive?.messages ?? []);
-      }
-      deleteChat(chatId);
-      return next;
-    });
+  async function handleDeleteChat(sessionId: string) {
+    await deleteSession(sessionId);
   }
 
-  function handleRenameSave(chatId: string) {
+  async function handleRenameSave(sessionId: string) {
     const trimmed = renameDraft.trim();
     if (!trimmed) return;
 
-    setConversations((prev) => {
-      const next = prev.map((chat) =>
-        chat.id === chatId ? { ...chat, title: trimmed, updatedAt: Date.now() } : chat,
-      );
-      const active = next.find((chat) => chat.id === chatId);
-      if (active) saveChat(active);
-      return sortConversations(next);
-    });
+    await renameSession(sessionId, trimmed);
     setRenameId(null);
     setRenameDraft("");
   }
@@ -493,8 +352,8 @@ function HomeContent() {
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-3 pb-3">
-          {Object.entries(groupedConversations).map(([label, groupedChats]) => {
-            if (groupedChats.length === 0) return null;
+          {Object.entries(groupedConversations).map(([label, groupedSessions]) => {
+            if (groupedSessions.length === 0) return null;
 
             return (
               <div key={label} className="space-y-2">
@@ -502,24 +361,26 @@ function HomeContent() {
                   {label}
                 </p>
 
-                {groupedChats.map((chat) => {
-                  const isActive = activeChatId === chat.id;
+                {groupedSessions.map((session) => {
+                  const isActive = activeSessionId === session.id;
+                  const isStreaming = session.status === "streaming" || session.status === "sending";
+                  
                   return (
                     <div
-                      key={chat.id}
+                      key={session.id}
                       className={`group relative rounded-xl border p-2 ${
                         isActive
                           ? "border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900"
                           : "border-transparent bg-transparent hover:border-zinc-200 hover:bg-white dark:hover:border-zinc-700 dark:hover:bg-zinc-900"
                       }`}
                     >
-                      {renameId === chat.id ? (
+                      {renameId === session.id ? (
                         <div className="space-y-2">
                           <input
                             value={renameDraft}
                             onChange={(event) => setRenameDraft(event.target.value)}
                             onKeyDown={(event) => {
-                              if (event.key === "Enter") handleRenameSave(chat.id);
+                              if (event.key === "Enter") handleRenameSave(session.id);
                               if (event.key === "Escape") {
                                 setRenameId(null);
                                 setRenameDraft("");
@@ -531,7 +392,7 @@ function HomeContent() {
                           <div className="flex gap-2">
                             <button
                               type="button"
-                              onClick={() => handleRenameSave(chat.id)}
+                              onClick={() => handleRenameSave(session.id)}
                               className="rounded-full bg-zinc-900 px-2 py-1 text-[10px] font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
                             >
                               Save
@@ -552,18 +413,21 @@ function HomeContent() {
                         <div className="flex items-center justify-between gap-2">
                           <button
                             type="button"
-                            onClick={() => handleSelectChat(chat.id)}
+                            onClick={() => handleSelectChat(session.id)}
                             className="flex-1 truncate text-left text-sm font-medium text-zinc-700 transition hover:text-zinc-900 dark:text-zinc-200 dark:hover:text-zinc-50"
                           >
-                            {chat.title}
+                            {isStreaming && (
+                              <span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-green-500" />
+                            )}
+                            {session.title}
                           </button>
 
                           <ChatMenu
                             onEdit={() => {
-                              setRenameId(chat.id);
-                              setRenameDraft(chat.title);
+                              setRenameId(session.id);
+                              setRenameDraft(session.title);
                             }}
-                            onDelete={() => handleDeleteChat(chat.id)}
+                            onDelete={() => handleDeleteChat(session.id)}
                           />
                         </div>
                       )}
@@ -580,13 +444,9 @@ function HomeContent() {
             type="button"
             onClick={() => {
               if (typeof window !== 'undefined') {
-                const confirmed = window.confirm('Hapus semua riwayat chat dan cache lokal?');
+                const confirmed = window.confirm('Hapus semua riwayat chat?');
                 if (!confirmed) return;
-                window.localStorage.removeItem('tanyahukum.chats.v1');
-                setConversations([]);
-                setMessages([]);
-                setActiveChatId(null);
-                setSuggestions([]);
+                window.location.reload();
               }
             }}
             className="flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-left text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
@@ -595,7 +455,7 @@ function HomeContent() {
               <span aria-hidden="true">⚙️</span>
               Settings
             </span>
-            <span className="text-xs text-red-600 dark:text-red-400">Delete all local cache</span>
+            <span className="text-xs text-red-600 dark:text-red-400">Delete all</span>
           </button>
         </div>
       </aside>
@@ -671,7 +531,7 @@ function HomeContent() {
 
                 return (
                   <div
-                    key={`${message.role}-${index}`}
+                    key={message.id}
                     className="self-start max-w-[85%] rounded-2xl bg-zinc-100 px-4 py-2 text-sm leading-relaxed text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                   >
                     <div className="space-y-2">
@@ -722,7 +582,7 @@ function HomeContent() {
                             const baseMessages = currentMessages.slice(0, index);
                             const lastUser = [...baseMessages].reverse().find((entry) => entry.role === "user");
                             if (!lastUser) return;
-                            void sendMessage(lastUser.content, baseMessages);
+                            void sendMessage(lastUser.content);
                           }}
                           className="text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
                         >
@@ -736,7 +596,7 @@ function HomeContent() {
 
               return (
                 <div
-                  key={`${message.role}-${index}`}
+                  key={message.id}
                   className={`max-w-[85%] rounded-2xl px-4 py-2 text-sm leading-relaxed ${
                     message.role === "user"
                       ? "self-end bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
