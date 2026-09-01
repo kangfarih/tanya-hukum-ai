@@ -411,7 +411,7 @@ function HomeContent() {
                   return (
                     <div
                       key={`${session.id}-${index}`}
-                      className={`group relative rounded-xl border p-2 ${
+                      className={`group relative overflow-hidden rounded-xl border p-2 ${
                         isActive
                           ? "border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900"
                           : "border-transparent bg-transparent hover:border-zinc-200 hover:bg-white dark:hover:border-zinc-700 dark:hover:bg-zinc-900"
@@ -453,17 +453,17 @@ function HomeContent() {
                           </div>
                         </div>
                       ) : (
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-start justify-between gap-2">
                           <button
                             type="button"
                             onClick={() => handleSelectChat(session.id)}
-                            className="flex-1 text-left transition hover:text-zinc-900 dark:hover:text-zinc-50"
+                            className="min-w-0 flex-1 text-left transition hover:text-zinc-900 dark:hover:text-zinc-50"
                           >
                             <div className="flex items-center gap-2">
                               {isStreaming && (
                                 <span className="inline-block h-2 w-2 flex-shrink-0 animate-pulse rounded-full bg-green-500" />
                               )}
-                              <span className="truncate text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                              <span className="block truncate text-sm font-medium text-zinc-700 dark:text-zinc-200">
                                 {session.title}
                               </span>
                             </div>
