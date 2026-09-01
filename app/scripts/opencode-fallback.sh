@@ -4,7 +4,7 @@ set -uo pipefail
 PROMPT="${1:-}"
 TIMEOUT_SECONDS="${2:-90}"
 OPENCODE_BIN="${OPENCODE_BIN:-}"
-MODEL="${OPENCODE_MODEL:-opencode/big-pickle}"
+MODEL="${OPENCODE_MODEL:-opencode/mimo-v2.5-free}"
 
 if [[ -z "$PROMPT" ]]; then
   echo "Usage: $0 \"prompt\" [timeout-seconds]"
