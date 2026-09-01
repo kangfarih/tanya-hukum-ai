@@ -623,30 +623,32 @@ function HomeContent() {
                         </details>
                       ) : null}
 
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(content).catch(() => undefined);
-                          }}
-                          className="text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
-                        >
-                          Copy
-                        </button>
+                      {!isLoading && (
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(content).catch(() => undefined);
+                            }}
+                            className="text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+                          >
+                            Copy
+                          </button>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const baseMessages = currentMessages.slice(0, index);
-                            const lastUser = [...baseMessages].reverse().find((entry) => entry.role === "user");
-                            if (!lastUser) return;
-                            void sendMessage(lastUser.content);
-                          }}
-                          className="text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
-                        >
-                          Regenerate
-                        </button>
-                      </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const baseMessages = currentMessages.slice(0, index);
+                              const lastUser = [...baseMessages].reverse().find((entry) => entry.role === "user");
+                              if (!lastUser) return;
+                              void sendMessage(lastUser.content);
+                            }}
+                            className="text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+                          >
+                            Regenerate
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
