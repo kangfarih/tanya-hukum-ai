@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { Modal } from "../components/Modal";
 import { ReduxProvider } from "../components/ReduxProvider";
+import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { useSessionChat } from "../../hooks/useSessionChat";
 import type { ChatSession } from "../lib/redux/slices/sessionSlice";
 
@@ -263,6 +264,7 @@ function HomeContent() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const suggestionsLoaded = useRef(false);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Load local suggestions from localStorage on mount
   useEffect(() => {
@@ -293,6 +295,10 @@ function HomeContent() {
     deleteSession,
     renameSession,
   } = useSessionChat();
+
+  const { autoScroll, showScrollButton, scrollToBottom } = useAutoScroll(scrollContainerRef, {
+    isStreaming: isLoading,
+  });
 
   const groupedConversations = useMemo(() => {
     const groups: Record<string, ChatSession[]> = {
@@ -670,7 +676,7 @@ function HomeContent() {
           </div>
         </header>
 
-        <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 pb-24 pt-4 lg:px-6">
+        <div ref={scrollContainerRef} className="relative flex flex-1 flex-col gap-3 overflow-y-auto px-4 pb-24 pt-4 lg:px-6">
           {isEmpty ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-8 text-center">
               <div className="max-w-md space-y-2">
@@ -843,6 +849,20 @@ function HomeContent() {
               {error}
             </button>
           ) : null}
+
+          {/* Scroll-to-bottom button */}
+          {showScrollButton && (
+            <button
+              type="button"
+              onClick={() => scrollToBottom()}
+              className="sticky bottom-2 mx-auto flex h-10 w-10 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-600 shadow-lg transition hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              aria-label="Scroll to bottom"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+          )}
         </div>
 
         <form className={`fixed bottom-0 left-0 right-0 z-10 flex items-center gap-2 border-t border-zinc-200 bg-white px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950 lg:left-72 ${isEmpty ? 'justify-center' : 'justify-start'}`} onSubmit={handleSubmit}>
