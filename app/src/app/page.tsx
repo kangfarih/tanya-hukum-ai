@@ -1,21 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { useChat } from "../../hooks/useChat";
+import { ReduxProvider } from "../components/ReduxProvider";
 import {
   buildConversationTitle,
   createConversationFromMessages,
   deleteChat,
-  getChats,
   saveChat,
   type ChatConversation,
   type ChatMessage,
 } from "../lib/chatStorage";
-
-type FeedbackValue = "up" | "down";
 
 type CitationSource = {
   id: number;
@@ -41,12 +39,14 @@ const sourceCatalog: Record<number, CitationSource> = {
   },
 };
 
-const suggestionPrompts = [
+const defaultSuggestions = [
   "Apa sanksi keterlambatan pelaporan pajak?",
   "Bagaimana prosedur pengajuan keberatan?",
   "Apa perbedaan sengketa administrasi dan pidana?",
   "Apa yang dimaksud dengan pasal 27 UU ITE?",
 ];
+
+const SUGGESTIONS_CACHE_KEY = "tanyahukum.suggestions.v1";
 
 function getCitationIds(content: string): number[] {
   const ids = Array.from(content.matchAll(/\[\^(\d+)\]/g), (match) => Number(match[1]));
@@ -72,17 +72,200 @@ function groupConversationDateLabel(date: number) {
   return "Sebelumnya";
 }
 
+type SetValue<T> = T | ((prev: T) => T);
+
+function useLocalStorage<T>(key: string, initialValue: T): [T, (value: SetValue<T>) => void] {
+  const [storedValue, setStoredValue] = useState<T>(() => {
+    if (typeof window === "undefined") return initialValue;
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? (JSON.parse(item) as T) : initialValue;
+    } catch {
+      return initialValue;
+    }
+  });
+
+  const setValue = useCallback(
+    (value: SetValue<T>) => {
+      setStoredValue((prev) => {
+        const nextValue = typeof value === "function" ? (value as (prev: T) => T)(prev) : value;
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(key, JSON.stringify(nextValue));
+        }
+        return nextValue;
+      });
+    },
+    [key],
+  );
+
+  return [storedValue, setValue];
+}
+
+function ThreeDotIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="8" cy="3" r="1.5" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.5" fill="currentColor" />
+      <circle cx="8" cy="13" r="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ChatMenu({
+  onEdit,
+  onDelete,
+}: {
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(event.target as Node) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(event.target as Node)
+      ) {
+        setMenuPos(null);
+      }
+    }
+    if (menuPos) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [menuPos]);
+
+  function toggleMenu(event: React.MouseEvent) {
+    event.stopPropagation();
+    if (menuPos) {
+      setMenuPos(null);
+    } else if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setMenuPos({ top: rect.bottom + 4, left: rect.right - 144 });
+    }
+  }
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={toggleMenu}
+        className="rounded p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-zinc-600 group-hover:opacity-100 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+      >
+        <ThreeDotIcon />
+      </button>
+
+      {menuPos ? (
+        <div
+          ref={menuRef}
+          style={{ position: "fixed", top: menuPos.top, left: menuPos.left, zIndex: 50 }}
+          className="w-36 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              onEdit();
+              setMenuPos(null);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            <EditIcon />
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onDelete();
+              setMenuPos(null);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+          >
+            <TrashIcon />
+            Delete
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M22 2L11 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M17 3C17.2626 2.73735 17.5744 2.52901 17.9176 2.38687C18.2608 2.24473 18.6286 2.17157 19 2.17157C19.3714 2.17157 19.7392 2.24473 20.0824 2.38687C20.4256 2.52901 20.7374 2.73735 21 3C21.2626 3.26264 21.471 3.57444 21.6131 3.91762C21.7553 4.2608 21.8284 4.62856 21.8284 5C21.8284 5.37144 21.7553 5.7392 21.6131 6.08238C21.471 6.42556 21.2626 6.73735 21 7L7.5 20.5L2 22L3.5 16.5L17 3Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3 6H5H21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6M19 6V20C19 20.5304 18.7893 21.0391 18.4142 21.4142C18.0391 21.7893 17.5304 22 17 22H7C6.46957 22 5.96086 21.7893 5.58579 21.4142C5.21071 21.0391 5 20.5304 5 20V6H19Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export default function Home() {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <main className="flex h-screen w-full items-center justify-center">
+        <div className="text-sm text-zinc-500 dark:text-zinc-400">Loading...</div>
+      </main>
+    );
+  }
+
+  return (
+    <ReduxProvider>
+      <HomeContent />
+    </ReduxProvider>
+  );
+}
+
+function HomeContent() {
   const [input, setInput] = useState("");
-  const [conversations, setConversations] = useState<ChatConversation[]>(() => sortConversations(getChats()));
-  const [activeChatId, setActiveChatId] = useState<string | null>(() => getChats()[0]?.id ?? null);
+  const [suggestions, setSuggestions] = useState<string[]>(defaultSuggestions);
+  const [conversations, setConversations] = useLocalStorage<ChatConversation[]>(
+    "tanyahukum.chats.v1",
+    [],
+  );
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
-  const [feedbackByMessage, setFeedbackByMessage] = useState<Record<string, FeedbackValue>>({});
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const { messages, setMessages, sendMessage, isLoading, error, stop } = useChat();
+
+  const sortedConversations = useMemo(() => sortConversations(conversations), [conversations]);
 
   const activeConversation = useMemo(
     () => conversations.find((chat) => chat.id === activeChatId) ?? null,
@@ -97,15 +280,80 @@ export default function Home() {
       "Sebelumnya": [],
     };
 
-    for (const chat of sortConversations(conversations)) {
+    for (const chat of sortedConversations) {
       groups[groupConversationDateLabel(chat.updatedAt)]?.push(chat);
     }
 
     return groups;
-  }, [conversations]);
+  }, [sortedConversations]);
 
   const currentMessages = messages.length > 0 ? messages : activeConversation?.messages ?? [];
+
+  // Sync messages to conversations when response completes
+  useEffect(() => {
+    if (!activeChatId || isLoading || messages.length === 0) return;
+
+    setConversations((prev) =>
+      sortConversations(
+        prev.map((chat) =>
+          chat.id === activeChatId
+            ? { ...chat, messages, updatedAt: Date.now() }
+            : chat,
+        ),
+      ),
+    );
+  }, [messages, isLoading, activeChatId, setConversations]);
   const isEmpty = currentMessages.length === 0;
+  // Load suggestions from cache or generate new ones
+  useEffect(() => {
+    const loadSuggestions = async () => {
+      try {
+        // Check cache first
+        const cached = window.localStorage.getItem(SUGGESTIONS_CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached) as string[];
+          setSuggestions(parsed);
+          return;
+        }
+
+        // Generate new suggestions
+        const response = await fetch("/api/suggestions");
+        if (!response.ok) {
+          console.error("Suggestions API error:", response.status);
+          throw new Error(`Suggestions API returned ${response.status}`);
+        }
+
+        const text = await response.text();
+        let data: { suggestions?: unknown } = {};
+
+        if (text) {
+          try {
+            data = JSON.parse(text) as { suggestions?: unknown };
+          } catch (parseError) {
+            console.error("Failed to parse suggestions response:", parseError);
+            throw parseError;
+          }
+        }
+
+        const nextSuggestions = Array.isArray(data.suggestions)
+          ? data.suggestions.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+          : [];
+
+        if (nextSuggestions.length > 0) {
+          setSuggestions(nextSuggestions);
+          window.localStorage.setItem(SUGGESTIONS_CACHE_KEY, JSON.stringify(nextSuggestions));
+          return;
+        }
+
+        throw new Error("Suggestions payload was empty");
+      } catch (error) {
+        console.error("Failed to load suggestions:", error);
+        setSuggestions(defaultSuggestions);
+      }
+    };
+
+    void loadSuggestions();
+  }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -113,53 +361,67 @@ export default function Home() {
     const value = input.trim();
     if (!value) return;
 
-    let targetId = activeChatId;
-    if (!targetId) {
-      const created = createConversationFromMessages();
-      setConversations((prev) => sortConversations([created, ...prev]));
-      setActiveChatId(created.id);
-      targetId = created.id;
-    }
+    const title = buildConversationTitle(value);
 
-    const targetConversation = conversations.find((chat) => chat.id === targetId) ?? null;
-    const baseMessages: ChatMessage[] = targetConversation?.messages ?? currentMessages;
-    const nextMessages: ChatMessage[] = [...baseMessages, { role: "user", content: value }];
-    const title = targetConversation?.title === "New chat" ? buildConversationTitle(value) : targetConversation?.title ?? "New chat";
+    setConversations((prev) => {
+      let targetId = activeChatId;
+      let targetConversation = prev.find((chat) => chat.id === targetId) ?? null;
 
-    setConversations((prev) =>
-      sortConversations(
-        prev.map((chat) => (chat.id === targetId ? { ...chat, title, messages: nextMessages, updatedAt: Date.now() } : chat)),
-      ),
-    );
-    setInput("");
-    setMessages(nextMessages);
-    setSidebarOpen(false);
-    await sendMessage(value, nextMessages);
+      if (!targetId) {
+        const created = createConversationFromMessages();
+        targetId = created.id;
+        targetConversation = created;
+        prev = [created, ...prev];
+      }
+
+      const baseMessages: ChatMessage[] = targetConversation?.messages ?? [];
+      const nextMessages: ChatMessage[] = [...baseMessages, { role: "user", content: value }];
+      const finalTitle = targetConversation?.title === "New chat" ? title : targetConversation?.title ?? title;
+
+      setActiveChatId(targetId);
+      setMessages(nextMessages);
+      setInput("");
+      setSidebarOpen(false);
+
+      void sendMessage(value, nextMessages);
+
+      return sortConversations(
+        prev.map((chat) => (chat.id === targetId ? { ...chat, title: finalTitle, messages: nextMessages, updatedAt: Date.now() } : chat)),
+      );
+    });
   }
 
   async function handleSuggestionClick(value: string) {
-    const targetId = activeChatId ?? (() => {
-      const created = createConversationFromMessages();
-      setConversations((prev) => sortConversations([created, ...prev]));
-      setActiveChatId(created.id);
-      return created.id;
-    })();
+    const title = buildConversationTitle(value);
 
-    const targetConversation = conversations.find((chat) => chat.id === targetId) ?? null;
-    const baseMessages: ChatMessage[] = targetConversation?.messages ?? [];
-    const nextMessages: ChatMessage[] = [...baseMessages, { role: "user", content: value }];
-    const title = targetConversation?.title === "New chat" ? buildConversationTitle(value) : targetConversation?.title ?? "New chat";
+    setConversations((prev) => {
+      let targetId = activeChatId;
+      let targetConversation = prev.find((chat) => chat.id === targetId) ?? null;
 
-    setConversations((prev) =>
-      sortConversations(
+      if (!targetId) {
+        const created = createConversationFromMessages();
+        targetId = created.id;
+        targetConversation = created;
+        prev = [created, ...prev];
+      }
+
+      const baseMessages: ChatMessage[] = targetConversation?.messages ?? [];
+      const nextMessages: ChatMessage[] = [...baseMessages, { role: "user", content: value }];
+      const finalTitle = targetConversation?.title === "New chat" ? title : targetConversation?.title ?? title;
+
+      setActiveChatId(targetId);
+      setMessages(nextMessages);
+      setInput("");
+      setSidebarOpen(false);
+
+      void sendMessage(value, nextMessages);
+
+      return sortConversations(
         prev.map((chat): ChatConversation =>
-          chat.id === targetId ? { ...chat, title, messages: nextMessages, updatedAt: Date.now() } : chat,
+          chat.id === targetId ? { ...chat, title: finalTitle, messages: nextMessages, updatedAt: Date.now() } : chat,
         ),
-      ),
-    );
-    setMessages(nextMessages);
-    setInput("");
-    await sendMessage(value, nextMessages);
+      );
+    });
   }
 
   async function handleEditAndResend(index: number) {
@@ -185,9 +447,7 @@ export default function Home() {
   }
 
   function handleNewChat() {
-    const created = createConversationFromMessages();
-    setConversations((prev) => sortConversations([created, ...prev]));
-    setActiveChatId(created.id);
+    setActiveChatId(null);
     setMessages([]);
     setSidebarOpen(false);
   }
@@ -201,9 +461,6 @@ export default function Home() {
   }
 
   function handleDeleteChat(chatId: string) {
-    const confirmed = window.confirm("Hapus percakapan ini?");
-    if (!confirmed) return;
-
     setConversations((prev) => {
       const next = prev.filter((chat) => chat.id !== chatId);
       if (chatId === activeChatId) {
@@ -214,25 +471,6 @@ export default function Home() {
       deleteChat(chatId);
       return next;
     });
-  }
-
-  function handleDuplicateChat(chatId: string) {
-    const source = conversations.find((chat) => chat.id === chatId);
-    if (!source) return;
-
-    const duplicate: ChatConversation = {
-      ...source,
-      id: `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      title: `${source.title} (salinan)`,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      messages: source.messages.map((message) => ({ ...message })),
-    };
-
-    setConversations((prev) => sortConversations([duplicate, ...prev]));
-    setActiveChatId(duplicate.id);
-    setMessages(duplicate.messages);
-    saveChat(duplicate);
   }
 
   function handleRenameSave(chatId: string) {
@@ -252,13 +490,13 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto flex h-full w-full max-w-[1600px] gap-0 px-0 py-0">
+    <main className="flex h-screen w-full overflow-hidden">
       <aside
-        className={`fixed inset-y-0 left-0 z-30 w-[82vw] max-w-xs border-r border-zinc-200 bg-zinc-50 p-3 transition-transform duration-200 dark:border-zinc-800 dark:bg-zinc-950 lg:static lg:w-72 lg:translate-x-0 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        className={`flex w-72 flex-shrink-0 flex-col border-r border-zinc-200 bg-zinc-50 transition-transform duration-200 dark:border-zinc-800 dark:bg-zinc-950 ${
+          sidebarOpen ? "fixed inset-y-0 left-0 z-30 w-[82vw] max-w-xs translate-x-0" : "fixed -translate-x-full lg:static lg:translate-x-0"
         }`}
       >
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between p-3">
           <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
             Chat
           </h2>
@@ -271,7 +509,7 @@ export default function Home() {
           </button>
         </div>
 
-        <div className="space-y-4 overflow-y-auto">
+        <div className="flex-1 space-y-4 overflow-y-auto px-3 pb-3">
           {Object.entries(groupedConversations).map(([label, groupedChats]) => {
             if (groupedChats.length === 0) return null;
 
@@ -286,7 +524,7 @@ export default function Home() {
                   return (
                     <div
                       key={chat.id}
-                      className={`rounded-xl border p-2 ${
+                      className={`group relative rounded-xl border p-2 ${
                         isActive
                           ? "border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900"
                           : "border-transparent bg-transparent hover:border-zinc-200 hover:bg-white dark:hover:border-zinc-700 dark:hover:bg-zinc-900"
@@ -297,6 +535,14 @@ export default function Home() {
                           <input
                             value={renameDraft}
                             onChange={(event) => setRenameDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") handleRenameSave(chat.id);
+                              if (event.key === "Escape") {
+                                setRenameId(null);
+                                setRenameDraft("");
+                              }
+                            }}
+                            autoFocus
                             className="w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
                           />
                           <div className="flex gap-2">
@@ -320,41 +566,22 @@ export default function Home() {
                           </div>
                         </div>
                       ) : (
-                        <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
                           <button
                             type="button"
                             onClick={() => handleSelectChat(chat.id)}
-                            className="w-full text-left text-sm font-medium text-zinc-700 transition hover:text-zinc-900 dark:text-zinc-200 dark:hover:text-zinc-50"
+                            className="flex-1 truncate text-left text-sm font-medium text-zinc-700 transition hover:text-zinc-900 dark:text-zinc-200 dark:hover:text-zinc-50"
                           >
                             {chat.title}
                           </button>
 
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setRenameId(chat.id);
-                                setRenameDraft(chat.title);
-                              }}
-                              className="text-[10px] uppercase tracking-wide text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-                            >
-                              Rename
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDuplicateChat(chat.id)}
-                              className="text-[10px] uppercase tracking-wide text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-                            >
-                              Duplicate
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteChat(chat.id)}
-                              className="text-[10px] uppercase tracking-wide text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                            >
-                              Delete
-                            </button>
-                          </div>
+                          <ChatMenu
+                            onEdit={() => {
+                              setRenameId(chat.id);
+                              setRenameDraft(chat.title);
+                            }}
+                            onDelete={() => handleDeleteChat(chat.id)}
+                          />
                         </div>
                       )}
                     </div>
@@ -363,6 +590,31 @@ export default function Home() {
               </div>
             );
           })}
+        </div>
+
+        <div className="border-t border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                const confirmed = window.confirm('Hapus semua riwayat chat dan cache lokal?');
+                if (!confirmed) return;
+                window.localStorage.removeItem('tanyahukum.chats.v1');
+                window.localStorage.removeItem('tanyahukum.suggestions.v1');
+                setConversations([]);
+                setMessages([]);
+                setActiveChatId(null);
+                setSuggestions(defaultSuggestions);
+              }
+            }}
+            className="flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-left text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            <span className="flex items-center gap-2">
+              <span aria-hidden="true">⚙️</span>
+              Settings
+            </span>
+            <span className="text-xs text-red-600 dark:text-red-400">Delete all local cache</span>
+          </button>
         </div>
       </aside>
 
@@ -375,8 +627,8 @@ export default function Home() {
         />
       ) : null}
 
-      <section className="flex min-h-screen flex-1 flex-col px-4 py-4 lg:px-6">
-        <header className="mb-4 flex items-center justify-between gap-3">
+      <section className="flex flex-1 flex-col overflow-hidden">
+        <header className="flex items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -400,7 +652,7 @@ export default function Home() {
           </Link>
         </header>
 
-        <div className="flex flex-1 flex-col gap-3 overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 pb-24 pt-4 lg:px-6">
           {isEmpty ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-8 text-center">
               <div className="max-w-md space-y-2">
@@ -411,7 +663,7 @@ export default function Home() {
               </div>
 
               <div className="flex flex-wrap justify-center gap-2">
-                {suggestionPrompts.map((prompt) => (
+                {suggestions.map((prompt) => (
                   <button
                     key={prompt}
                     type="button"
@@ -427,8 +679,6 @@ export default function Home() {
           ) : (
             currentMessages.map((message, index) => {
               const content = message.content || (isLoading && index === currentMessages.length - 1 ? "…" : "");
-              const feedbackKey = `${message.role}-${index}`;
-              const currentFeedback = feedbackByMessage[feedbackKey];
 
               if (message.role === "assistant") {
                 const citationIds = getCitationIds(content);
@@ -496,33 +746,7 @@ export default function Home() {
                         >
                           Regenerate
                         </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setFeedbackByMessage((prev) => ({ ...prev, [feedbackKey]: "up" }))}
-                          className={`text-xs font-medium ${currentFeedback === "up" ? "text-emerald-600 dark:text-emerald-400" : "text-zinc-600 dark:text-zinc-300"}`}
-                        >
-                          👍
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setFeedbackByMessage((prev) => ({ ...prev, [feedbackKey]: "down" }))}
-                          className={`text-xs font-medium ${currentFeedback === "down" ? "text-rose-600 dark:text-rose-400" : "text-zinc-600 dark:text-zinc-300"}`}
-                        >
-                          👎
-                        </button>
-
-                        <span className="text-[10px] uppercase tracking-wide text-zinc-400">
-                          {currentFeedback ? "Feedback saved locally" : "Feedback"}
-                        </span>
                       </div>
-
-                      {currentFeedback ? (
-                        <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
-                          TODO: persist feedback to a backend or analytics store.
-                        </div>
-                      ) : null}
                     </div>
                   </div>
                 );
@@ -596,7 +820,7 @@ export default function Home() {
           ) : null}
         </div>
 
-        <form className={`mt-4 flex items-center gap-2 ${isEmpty ? "justify-center" : ""}`} onSubmit={handleSubmit}>
+        <form className={`fixed bottom-0 left-0 right-0 z-10 flex items-center gap-2 border-t border-zinc-200 bg-white px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950 lg:left-72 ${isEmpty ? 'justify-center' : 'justify-start'}`} onSubmit={handleSubmit}>
           <div className={`flex w-full items-center gap-2 ${isEmpty ? "max-w-2xl" : ""}`}>
             <input
               value={input}
@@ -610,17 +834,19 @@ export default function Home() {
               <button
                 type="button"
                 onClick={stop}
-                className="rounded-full border border-zinc-300 px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                aria-label="Stop generating"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
               >
-                Stop
+                <StopIcon />
               </button>
             ) : (
               <button
                 type="submit"
                 disabled={!input.trim()}
-                className="rounded-full bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
+                aria-label="Send message"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-900 text-white transition disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
               >
-                Send
+                <SendIcon />
               </button>
             )}
           </div>
