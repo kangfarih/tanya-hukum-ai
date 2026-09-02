@@ -16,6 +16,9 @@ export const metadata: Metadata = {
   title: "TanyaHukum — ID Legal Assistant",
   description:
     "Ask Indonesian law. Every answer cites its source. RAG over official Indonesian regulations.",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
