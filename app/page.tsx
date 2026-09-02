@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { MarkdownMessage } from "../components/MarkdownMessage";
-import { Modal } from "../components/Modal";
-import { ReduxProvider } from "../components/ReduxProvider";
-import { useAutoScroll } from "../../hooks/useAutoScroll";
-import { useSessionChat } from "../../hooks/useSessionChat";
-import type { ChatSession } from "../lib/redux/slices/sessionSlice";
+import { MarkdownMessage } from "@/main/components/MarkdownMessage";
+import { Modal } from "@/main/components/Modal";
+import { ReduxProvider } from "@/main/components/ReduxProvider";
+import { useAutoScroll } from "@/main/hooks/useAutoScroll";
+import { useSessionChat } from "@/main/hooks/useSessionChat";
+import type { ChatSession } from "@/main/store/slices/sessionSlice";
 
 type CitationSource = {
   id: number;

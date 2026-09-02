@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { sessionStore } from "../../../lib/server/sessionStore";
+import { sessionStore } from "@/server/sessionStore";
 
 export const runtime = "nodejs";
 

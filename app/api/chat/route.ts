@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
-import { streamChat, type ChatMessage } from "../../../lib/llm";
-import { sessionStore } from "../../../lib/server/sessionStore";
+import { streamChat, type ChatMessage } from "@/ai/llm";
+import { readSystemPrompt } from "@/ai/promptBuilder";
+import { sessionStore } from "@/server/sessionStore";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -100,8 +101,16 @@ export async function POST(req: NextRequest) {
     return jsonError(400, "Last message must be from user.");
   }
 
+  // Load system prompt
+  let systemPrompt = "";
+  try {
+    systemPrompt = await readSystemPrompt();
+  } catch (err) {
+    console.error("Failed to load system prompt:", err);
+  }
+
   // If we have a session, use server-side history
-  let messagesForLLM: ChatMessage[];
+  let rawMessagesForLLM: ChatMessage[];
   if (session) {
     // Append user message to session
     sessionStore.appendMessage(session.id, {
@@ -111,7 +120,7 @@ export async function POST(req: NextRequest) {
 
     // Get updated session with user message
     const updatedSession = sessionStore.get(session.id);
-    messagesForLLM = updatedSession!.messages.map((m) => ({
+    rawMessagesForLLM = updatedSession!.messages.map((m) => ({
       role: m.role,
       content: m.content,
     }));
@@ -122,8 +131,12 @@ export async function POST(req: NextRequest) {
     }
   } else {
     // No session, use messages from client
-    messagesForLLM = validatedMessages;
+    rawMessagesForLLM = validatedMessages;
   }
+
+  const messagesForLLM: ChatMessage[] = systemPrompt
+    ? [{ role: "system", content: systemPrompt }, ...rawMessagesForLLM]
+    : rawMessagesForLLM;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -155,6 +168,7 @@ export async function POST(req: NextRequest) {
           model: process.env.LLM_PROVIDER || "openrouter",
         });
       } catch (error) {
+        console.error("Chat streaming error:", error);
         const isAbort = error instanceof DOMException && error.name === "AbortError";
         if (isAbort) {
           send({ type: "error", message: "Request was cancelled." });

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { v4 as uuidv4 } from "uuid";
-import type { RootState, AppDispatch } from "../src/lib/redux/store";
+import type { RootState, AppDispatch } from "@/main/store/store";
 import {
   createSession,
   deleteSession as deleteSessionAction,
@@ -18,7 +18,7 @@ import {
   selectAllSessionsSorted,
   type ChatMessage,
   type ChatSession,
-} from "../src/lib/redux/slices/sessionSlice";
+} from "@/main/store/slices/sessionSlice";
 
 interface StreamEvent {
   type: "token" | "done" | "error";
@@ -258,6 +258,7 @@ export function useSessionChat() {
   }, [activeSessionId]);
 
   const selectSession = useCallback((sessionId: string) => {
+    setError(null);
     dispatch(setActiveSession(sessionId || null));
   }, [dispatch]);
 

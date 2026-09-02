@@ -30,6 +30,10 @@ interface UseAutoScrollReturn {
  * When we programmatically scroll (via scrollTo), we set `isScrollingProgrammatically`
  * which tells the scroll event listener to ignore that particular scroll event.
  * This prevents our own scrollTo() from triggering "user scrolled up" logic.
+ *
+ * Uses ResizeObserver to detect content growth during streaming — this fires
+ * on every DOM size change (token appends), unlike React useEffect which only
+ * re-runs when its dependency array changes.
  */
 export function useAutoScroll(
   containerRef: React.RefObject<HTMLDivElement | null>,
@@ -40,10 +44,15 @@ export function useAutoScroll(
 
   // Lock to prevent programmatic scrolls from triggering user-scroll detection
   const isScrollingProgrammatically = useRef(false);
-  // Latest content hash to detect new content for batched scroll
-  const lastContentHeight = useRef(0);
-  // rAF ID for batching scroll-to-bottom calls
-  const scrollRafId = useRef<number | null>(null);
+  // Refs to read latest values inside observers/callbacks without re-attaching
+  const autoScrollRef = useRef(autoScroll);
+  const isStreamingRef = useRef(isStreaming);
+  const thresholdRef = useRef(threshold);
+
+  // Keep refs in sync with state
+  useEffect(() => { autoScrollRef.current = autoScroll; }, [autoScroll]);
+  useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
+  useEffect(() => { thresholdRef.current = threshold; }, [threshold]);
 
   /**
    * Check if the container is scrolled to the bottom (within threshold).
@@ -52,8 +61,8 @@ export function useAutoScroll(
     const el = containerRef.current;
     if (!el) return true;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    return distanceFromBottom <= threshold;
-  }, [containerRef, threshold]);
+    return distanceFromBottom <= thresholdRef.current;
+  }, [containerRef]);
 
   /**
    * Scroll the container to the bottom instantly.
@@ -66,7 +75,6 @@ export function useAutoScroll(
     isScrollingProgrammatically.current = true;
     el.scrollTop = el.scrollHeight;
     // Release the lock after the browser has processed the scroll event.
-    // Using rAF ensures we miss no scroll events from this call.
     requestAnimationFrame(() => {
       isScrollingProgrammatically.current = false;
     });
@@ -81,7 +89,6 @@ export function useAutoScroll(
     if (!el) return;
     isScrollingProgrammatically.current = true;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-    // Release lock after smooth scroll completes (give it time)
     setTimeout(() => {
       isScrollingProgrammatically.current = false;
     }, 500);
@@ -98,7 +105,7 @@ export function useAutoScroll(
     let rafId: number | null = null;
 
     const onScroll = () => {
-      if (rafId !== null) return; // Already scheduled
+      if (rafId !== null) return;
       rafId = requestAnimationFrame(() => {
         rafId = null;
 
@@ -109,12 +116,8 @@ export function useAutoScroll(
         setShowScrollButton(!atBottom);
 
         // If user scrolled to bottom, re-enable auto-scroll
-        if (atBottom) {
-          setAutoScroll(true);
-        } else {
-          // If user scrolled away from bottom, disable auto-scroll
-          setAutoScroll(false);
-        }
+        // If user scrolled away from bottom, disable auto-scroll
+        setAutoScroll(atBottom);
       });
     };
 
@@ -127,62 +130,11 @@ export function useAutoScroll(
   }, [containerRef, isAtBottom]);
 
   /**
-   * Auto-scroll when new content is appended during streaming.
-   * Uses rAF to batch rapid consecutive token appends.
-   */
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el || !isStreaming || !autoScroll) return;
-
-    const currentHeight = el.scrollHeight;
-
-    // Only scroll if content actually changed
-    if (currentHeight === lastContentHeight.current) return;
-    lastContentHeight.current = currentHeight;
-
-    // Cancel any pending scroll
-    if (scrollRafId.current !== null) {
-      cancelAnimationFrame(scrollRafId.current);
-    }
-
-    // Schedule a new scroll-to-bottom
-    scrollRafId.current = requestAnimationFrame(() => {
-      scrollRafId.current = null;
-      if (isAtBottom() || autoScroll) {
-        scrollToBottomInstant();
-      }
-    });
-
-    return () => {
-      if (scrollRafId.current !== null) {
-        cancelAnimationFrame(scrollRafId.current);
-      }
-    };
-  }, [containerRef, isStreaming, autoScroll, isAtBottom, scrollToBottomInstant]);
-
-  /**
-   * Handle content changes when NOT streaming (e.g., new message sent).
-   * This ensures we scroll to bottom on new user messages.
-   */
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el || isStreaming) return;
-
-    const currentHeight = el.scrollHeight;
-
-    if (currentHeight !== lastContentHeight.current) {
-      lastContentHeight.current = currentHeight;
-      // New content while not streaming — scroll to bottom
-      if (autoScroll) {
-        scrollToBottomInstant();
-        setShowScrollButton(false);
-      }
-    }
-  }, [containerRef, isStreaming, autoScroll, scrollToBottomInstant]);
-
-  /**
-   * Handle container resize: re-evaluate scroll button visibility
-   * without toggling autoScroll state.
+   * ResizeObserver: detect content growth and handle auto-scroll + button visibility.
+   *
+   * This is the primary mechanism for streaming auto-scroll. Unlike useEffect
+   * with dependency arrays, ResizeObserver fires on every DOM size change,
+   * which happens every time a new token is appended to the message.
    */
   useEffect(() => {
     const el = containerRef.current;
@@ -194,9 +146,21 @@ export function useAutoScroll(
       if (resizeRaf !== null) return;
       resizeRaf = requestAnimationFrame(() => {
         resizeRaf = null;
+
         const atBottom = isAtBottom();
         setShowScrollButton(!atBottom);
-        // Don't change autoScroll on resize — only update button visibility
+
+        // During streaming: if autoScroll is on, always scroll to bottom
+        // when content grows (user hasn't scrolled up).
+        // When not streaming: only scroll on new content if autoScroll is on.
+        const streaming = isStreamingRef.current;
+        const scrolling = autoScrollRef.current;
+
+        if (scrolling) {
+          if (streaming || atBottom) {
+            scrollToBottomInstant();
+          }
+        }
       });
     };
 
@@ -207,7 +171,7 @@ export function useAutoScroll(
       observer.disconnect();
       if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
     };
-  }, [containerRef, isAtBottom]);
+  }, [containerRef, isAtBottom, scrollToBottomInstant]);
 
   /**
    * Reset autoScroll when isStreaming changes from false to true
@@ -218,9 +182,8 @@ export function useAutoScroll(
       setAutoScroll(true);
       setShowScrollButton(false);
       scrollToBottomInstant();
-      lastContentHeight.current = containerRef.current?.scrollHeight ?? 0;
     }
-  }, [isStreaming, scrollToBottomInstant, containerRef]);
+  }, [isStreaming, scrollToBottomInstant]);
 
   return {
     autoScroll,
