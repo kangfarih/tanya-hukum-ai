@@ -1,13 +1,21 @@
+import type { NextRequest } from "next/server";
 import OpenAI from "openai";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const FALLBACK_SUGGESTIONS = [
+const FALLBACK_SUGGESTIONS_ID = [
   "Apa sanksi keterlambatan pelaporan pajak?",
   "Bagaimana prosedur pengajuan keberatan?",
   "Apa syarat untuk mengajukan gugatan perdata?",
   "Bagaimana cara menghitung denda administrasi?",
+];
+
+const FALLBACK_SUGGESTIONS_EN = [
+  "What are the penalties for late tax reporting?",
+  "How to file a tax objection?",
+  "What are the requirements for filing a civil lawsuit?",
+  "How to calculate administrative fines?",
 ];
 
 // Topics based on actual corpus documents
@@ -95,12 +103,15 @@ function parseSuggestions(rawContent: string): string[] {
   return [];
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const language = request.nextUrl.searchParams.get("lang") === "en" ? "en" : "id";
+    const fallbackSuggestions = language === "en" ? FALLBACK_SUGGESTIONS_EN : FALLBACK_SUGGESTIONS_ID;
+    
     const provider = getProviderConfig();
     if (!provider.apiKey) {
       console.warn("No LLM API key configured for suggestions; returning fallback suggestions.");
-      return Response.json({ suggestions: FALLBACK_SUGGESTIONS });
+      return Response.json({ suggestions: fallbackSuggestions });
     }
 
     // Pick 2-3 random topics from the actual corpus
@@ -112,21 +123,27 @@ export async function GET() {
       baseURL: provider.baseURL,
     });
 
-    const response = await openai.chat.completions.create({
-      model: provider.model,
-      messages: [
-        {
-          role: "system",
-          content: `Anda adalah asisten hukum Indonesia yang membantu menghasilkan pertanyaan contoh.
+    const systemPrompt = language === "en"
+      ? `You are an Indonesian legal assistant that generates example questions.
+Create 8 unique, varied legal questions relevant to Indonesian law.
+Questions should be specific and answerable based on applicable regulations.
+Return ONLY a JSON array of 8 strings, no additional text.
+Example: ["question 1", "question 2", "question 3", "question 4", "question 5", "question 6", "question 7", "question 8"]`
+      : `Anda adalah asisten hukum Indonesia yang membantu menghasilkan pertanyaan contoh.
 Buat 8 pertanyaan hukum yang unik, bervariasi, dan relevan dengan hukum Indonesia.
 Pertanyaan harus spesifik dan dapat dijawab berdasarkan peraturan perundang-undangan yang berlaku.
 Kembalikan HANYA array JSON berisi 8 string, tanpa teks tambahan.
-Contoh: ["pertanyaan 1", "pertanyaan 2", "pertanyaan 3", "pertanyaan 4", "pertanyaan 5", "pertanyaan 6", "pertanyaan 7", "pertanyaan 8"]`,
-        },
-        {
-          role: "user",
-          content: `Buat 8 pertanyaan hukum yang beragam dengan fokus pada topik: ${selectedTopics.join(", ")}. Pastikan pertanyaan spesifik dan dapat dijawab dengan merujuk pada peraturan yang berlaku.`,
-        },
+Contoh: ["pertanyaan 1", "pertanyaan 2", "pertanyaan 3", "pertanyaan 4", "pertanyaan 5", "pertanyaan 6", "pertanyaan 7", "pertanyaan 8"]`;
+
+    const userPrompt = language === "en"
+      ? `Create 8 diverse legal questions focusing on topics: ${selectedTopics.join(", ")}. Ensure questions are specific and can be answered by referring to applicable regulations.`
+      : `Buat 8 pertanyaan hukum yang beragam dengan fokus pada topik: ${selectedTopics.join(", ")}. Pastikan pertanyaan spesifik dan dapat dijawab dengan merujuk pada peraturan yang berlaku.`;
+
+    const response = await openai.chat.completions.create({
+      model: provider.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
       ],
       temperature: 0.9,
     });
@@ -136,12 +153,13 @@ Contoh: ["pertanyaan 1", "pertanyaan 2", "pertanyaan 3", "pertanyaan 4", "pertan
 
     if (suggestions.length === 0) {
       console.error("Invalid suggestions format:", content);
-      return Response.json({ suggestions: FALLBACK_SUGGESTIONS });
+      return Response.json({ suggestions: fallbackSuggestions });
     }
 
     return Response.json({ suggestions });
   } catch (error) {
     console.error("Suggestions API error:", error);
-    return Response.json({ suggestions: FALLBACK_SUGGESTIONS });
+    const lang = new URL(request.url).searchParams.get("lang") === "en" ? "en" : "id";
+    return Response.json({ suggestions: lang === "en" ? FALLBACK_SUGGESTIONS_EN : FALLBACK_SUGGESTIONS_ID });
   }
 }

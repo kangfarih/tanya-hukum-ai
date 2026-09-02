@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { MarkdownMessage } from "@/main/components/MarkdownMessage";
 import { Modal } from "@/main/components/Modal";
-import { ReduxProvider } from "@/main/components/ReduxProvider";
+import { Providers } from "@/main/components/Providers";
 import { useAutoScroll } from "@/main/hooks/useAutoScroll";
 import { useSessionChat } from "@/main/hooks/useSessionChat";
+import { useLanguage } from "@/main/i18n/LanguageContext";
 import type { ChatSession } from "@/main/store/slices/sessionSlice";
 
 type CitationSource = {
@@ -42,15 +43,15 @@ function stripCitationMarkers(content: string): string {
   return content.replace(/\[\^(\d+)\]/g, "").trim();
 }
 
-function groupConversationDateLabel(date: number) {
+function groupConversationDateLabel(date: number, lang: "id" | "en") {
   const oneDay = 24 * 60 * 60 * 1000;
   const now = Date.now();
   const diff = now - date;
 
-  if (diff < oneDay) return "Hari ini";
-  if (diff < oneDay * 2) return "Kemarin";
-  if (diff < oneDay * 7) return "7 hari terakhir";
-  return "Sebelumnya";
+  if (diff < oneDay) return lang === "id" ? "Hari ini" : "Today";
+  if (diff < oneDay * 2) return lang === "id" ? "Kemarin" : "Yesterday";
+  if (diff < oneDay * 7) return lang === "id" ? "7 hari terakhir" : "Last 7 days";
+  return lang === "id" ? "Sebelumnya" : "Older";
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -245,13 +246,14 @@ export default function Home() {
   }
 
   return (
-    <ReduxProvider>
+    <Providers>
       <HomeContent />
-    </ReduxProvider>
+    </Providers>
   );
 }
 
 function HomeContent() {
+  const { language, setLanguage, t } = useLanguage();
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [localSuggestions, setLocalSuggestions] = useState<string[]>([]);
@@ -302,30 +304,29 @@ function HomeContent() {
 
   const groupedConversations = useMemo(() => {
     const groups: Record<string, ChatSession[]> = {
-      "Hari ini": [],
-      "Kemarin": [],
-      "7 hari terakhir": [],
-      "Sebelumnya": [],
+      [t("today")]: [],
+      [t("yesterday")]: [],
+      [t("lastWeek")]: [],
+      [t("older")]: [],
     };
 
     for (const session of allSessions) {
-      groups[groupConversationDateLabel(session.updatedAt)]?.push(session);
+      groups[groupConversationDateLabel(session.updatedAt, language)]?.push(session);
     }
 
     return groups;
-  }, [allSessions]);
+  }, [allSessions, language, t]);
 
   const currentMessages = activeSession?.messages ?? [];
   const isEmpty = currentMessages.length === 0;
 
-  // Load suggestions from API (only once)
+  // Load suggestions from API when language changes
   useEffect(() => {
-    if (suggestionsLoaded.current) return;
-    suggestionsLoaded.current = true;
+    suggestionsLoaded.current = false;
 
     const loadSuggestions = async () => {
       try {
-        const response = await fetch("/api/suggestions");
+        const response = await fetch(`/api/suggestions?lang=${language}`);
         if (!response.ok) {
           console.error("Suggestions API error:", response.status);
           throw new Error(`Suggestions API returned ${response.status}`);
@@ -376,7 +377,7 @@ function HomeContent() {
     };
 
     void loadSuggestions();
-  }, []);
+  }, [language]);
 
   // Close settings menu when clicking outside
   useEffect(() => {
@@ -406,7 +407,7 @@ function HomeContent() {
   // Silently fetch new suggestions in the background
   async function refreshSuggestions() {
     try {
-      const response = await fetch("/api/suggestions");
+      const response = await fetch(`/api/suggestions?lang=${language}`);
       if (!response.ok) return;
 
       const text = await response.text();
@@ -507,14 +508,14 @@ function HomeContent() {
       >
         <div className="mb-4 flex items-center justify-between p-3">
           <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">
-            Chat
+            {t("chat")}
           </h2>
           <button
             type="button"
             onClick={handleNewChat}
             className="rounded-full bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
           >
-            New chat
+            {t("newChat")}
           </button>
         </div>
 
@@ -633,6 +634,16 @@ function HomeContent() {
             >
               <button
                 type="button"
+                onClick={() => setLanguage(language === "id" ? "en" : "id")}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-4 w-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418" />
+                </svg>
+                {language === "id" ? "English" : "Bahasa Indonesia"}
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   setSettingsOpen(false);
                   setShowClearConfirm(true);
@@ -642,7 +653,7 @@ function HomeContent() {
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-4 w-4">
                   <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
                 </svg>
-                Clear local data
+                {t("clearLocalData")}
               </button>
             </div>
           )}
@@ -670,8 +681,8 @@ function HomeContent() {
             </button>
 
             <div>
-              <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Tanya Hukum</h1>
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">Ask Indonesian law. Every answer cites its source.</p>
+              <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">{t("appName")}</h1>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("appTagline")}</p>
             </div>
           </div>
         </header>
@@ -870,7 +881,7 @@ function HomeContent() {
             <input
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder={isEmpty ? "Tanyakan hukum Indonesia..." : "Ask about Indonesian law…"}
+              placeholder={t("placeholder")}
               disabled={isLoading}
               className="flex-1 rounded-full border border-zinc-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-zinc-500 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-zinc-400"
             />
@@ -896,7 +907,7 @@ function HomeContent() {
             )}
           </div>
           <p className="w-full text-center text-[11px] text-zinc-400 dark:text-zinc-500">
-            Jawaban bersifat referensi. Selalu verifikasi dengan sumber resmi atau konsultasikan dengan ahli hukum.
+            {t("disclaimer")}
           </p>
         </form>
       </section>
@@ -904,7 +915,7 @@ function HomeContent() {
       <Modal
         open={showClearConfirm}
         onClose={() => setShowClearConfirm(false)}
-        title="Clear local data"
+        title={t("clearLocalData")}
         actions={
           <>
             <button
@@ -912,7 +923,7 @@ function HomeContent() {
               onClick={() => setShowClearConfirm(false)}
               className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
-              Cancel
+              {t("cancel")}
             </button>
             <button
               type="button"
@@ -924,16 +935,13 @@ function HomeContent() {
               }}
               className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700"
             >
-              Clear all
+              {t("clearAll")}
             </button>
           </>
         }
       >
         <p>
-          This will permanently delete all chat history and local settings stored on this device.
-        </p>
-        <p className="mt-2">
-          This action cannot be undone.
+          {t("clearLocalDataDesc")}
         </p>
       </Modal>
     </main>
