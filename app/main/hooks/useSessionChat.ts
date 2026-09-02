@@ -14,6 +14,7 @@ import {
   setSessionStatus,
   setSessionError,
   replaceLastAssistantMessage,
+  removeMessage,
   selectActiveSession,
   selectAllSessionsSorted,
   type ChatMessage,
@@ -135,8 +136,11 @@ export function useSessionChat() {
     const existingMessages = existingSession?.messages ?? [];
     
     // Build the messages array for API (existing + new user message)
+    // Filter out empty assistant messages (from failed streams)
     const messagesForAPI = [
-      ...existingMessages.map(m => ({ role: m.role, content: m.content })),
+      ...existingMessages
+        .filter(m => !(m.role === "assistant" && !m.content.trim()))
+        .map(m => ({ role: m.role, content: m.content })),
       { role: "user" as const, content: trimmed },
     ];
 
@@ -240,6 +244,15 @@ export function useSessionChat() {
         const message = err instanceof Error ? err.message : "Something went wrong";
         setError(message);
         dispatch(setSessionError({ sessionId, error: message }));
+        
+        // Remove the empty assistant message on error
+        const currentSession = allSessions.find(s => s.id === sessionId);
+        if (currentSession) {
+          const lastIdx = currentSession.messages.length - 1;
+          if (lastIdx >= 0 && currentSession.messages[lastIdx].role === "assistant" && !currentSession.messages[lastIdx].content) {
+            dispatch(removeMessage({ sessionId, messageIndex: lastIdx }));
+          }
+        }
       }
     } finally {
       activeControllers.delete(sessionId);
