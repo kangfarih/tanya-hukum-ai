@@ -895,6 +895,9 @@ function HomeContent() {
               </button>
             )}
           </div>
+          <p className="mt-2 text-center text-[11px] text-zinc-400 dark:text-zinc-500 lg:left-72">
+            Jawaban bersifat referensi. Selalu verifikasi dengan sumber resmi atau konsultasikan dengan ahli hukum.
+          </p>
         </form>
       </section>
 
