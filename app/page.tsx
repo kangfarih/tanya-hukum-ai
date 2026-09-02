@@ -379,7 +379,9 @@ function HomeContent() {
 
     void loadSuggestions();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [language]);
 
   // Close settings menu when clicking outside
