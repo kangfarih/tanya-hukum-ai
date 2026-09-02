@@ -79,21 +79,25 @@ function CodeBlock({ children, className, ...props }: ComponentPropsWithoutRef<"
         </button>
       </div>
 
-      <SyntaxHighlighter
-        {...props}
-        PreTag="div"
-        language={language}
-        style={isDarkMode ? oneDark : oneLight}
-        customStyle={{
-          margin: 0,
-          background: "transparent",
-          padding: "1rem",
-          fontSize: "0.82rem",
-          lineHeight: "1.6",
-        }}
-      >
-        {codeString}
-      </SyntaxHighlighter>
+      {/* suppressHydrationWarning: theme detection runs client-side only,
+          so server renders light theme and client may render dark theme. */}
+      <div suppressHydrationWarning>
+        <SyntaxHighlighter
+          {...props}
+          PreTag="div"
+          language={language}
+          style={isDarkMode ? oneDark : oneLight}
+          customStyle={{
+            margin: 0,
+            background: "transparent",
+            padding: "1rem",
+            fontSize: "0.82rem",
+            lineHeight: "1.6",
+          }}
+        >
+          {codeString}
+        </SyntaxHighlighter>
+      </div>
     </div>
   );
 }
@@ -142,7 +146,7 @@ export function MarkdownMessage({ content, className = "" }: MarkdownMessageProp
 
             return <CodeBlock className={className} {...props}>{children}</CodeBlock>;
           },
-          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+          p: ({ children }) => <div className="mb-2 last:mb-0">{children}</div>,
           ul: ({ children }) => <ul className="mb-2 list-disc pl-5">{children}</ul>,
           ol: ({ children }) => <ol className="mb-2 list-decimal pl-5">{children}</ol>,
           li: ({ children }) => <li className="mb-1">{children}</li>,
