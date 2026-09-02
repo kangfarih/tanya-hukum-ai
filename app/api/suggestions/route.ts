@@ -10,23 +10,18 @@ const FALLBACK_SUGGESTIONS = [
   "Bagaimana cara menghitung denda administrasi?",
 ];
 
-// List of legal topics for randomization
-const LEGAL_TOPICS = [
-  "perdata",
-  "pidana",
-  "ketenagakerjaan",
-  "pajak",
-  "lingkungan",
-  "digital",
-  "korporasi",
-  "hak asasi",
-  "internasional",
-  "konstitusi",
-  "properti",
-  "keluarga",
-  "dagang",
-  "ilmu pengetahuan",
-  "kesehatan",
+// Topics based on actual corpus documents
+const CORPUS_TOPICS = [
+  "pidana di luar KUHP",
+  "pelindungan pekerja rumah tangga",
+  "pelindungan saksi dan korban",
+  "sektor keuangan",
+  "kepolisian",
+  "tunjangan hari raya",
+  "ekspor komoditas",
+  "aset jaminan sosial",
+  "disabilitas",
+  "penerimaan negara bukan pajak",
 ];
 
 function getProviderConfig() {
@@ -108,8 +103,8 @@ export async function GET() {
       return Response.json({ suggestions: FALLBACK_SUGGESTIONS });
     }
 
-    // Pick 2-3 random topics for this request
-    const shuffledTopics = [...LEGAL_TOPICS].sort(() => Math.random() - 0.5);
+    // Pick 2-3 random topics from the actual corpus
+    const shuffledTopics = [...CORPUS_TOPICS].sort(() => Math.random() - 0.5);
     const selectedTopics = shuffledTopics.slice(0, 2 + Math.floor(Math.random() * 2));
 
     const openai = new OpenAI({
@@ -124,13 +119,13 @@ export async function GET() {
           role: "system",
           content: `Anda adalah asisten hukum Indonesia yang membantu menghasilkan pertanyaan contoh.
 Buat 8 pertanyaan hukum yang unik, bervariasi, dan relevan dengan hukum Indonesia.
-Pertanyaan harus mencakup berbagai topik hukum dan dalam Bahasa Indonesia yang baik.
+Pertanyaan harus spesifik dan dapat dijawab berdasarkan peraturan perundang-undangan yang berlaku.
 Kembalikan HANYA array JSON berisi 8 string, tanpa teks tambahan.
 Contoh: ["pertanyaan 1", "pertanyaan 2", "pertanyaan 3", "pertanyaan 4", "pertanyaan 5", "pertanyaan 6", "pertanyaan 7", "pertanyaan 8"]`,
         },
         {
           role: "user",
-          content: `Buat 8 pertanyaan hukum yang beragam dengan fokus pada topik: ${selectedTopics.join(", ")}. Pastikan pertanyaan bervariasi dari yang praktis hingga teoritis.`,
+          content: `Buat 8 pertanyaan hukum yang beragam dengan fokus pada topik: ${selectedTopics.join(", ")}. Pastikan pertanyaan spesifik dan dapat dijawab dengan merujuk pada peraturan yang berlaku.`,
         },
       ],
       temperature: 0.9,
