@@ -358,11 +358,10 @@ function HomeContent() {
             }
             return merged;
           });
-          // Always show first 4 local suggestions on empty chat
+          // Always show first 4 suggestions on empty chat
           setSuggestions((prev) => {
-            // If we're on an empty chat (no active session or empty messages), show first 4
-            if (prev.length === 0 || (activeSession && activeSession.messages.length === 0)) {
-              return localSuggestions.slice(0, 4);
+            if (prev.length === 0) {
+              return nextSuggestions.slice(0, 4);
             }
             return prev;
           });
