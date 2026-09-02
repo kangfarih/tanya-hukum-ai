@@ -264,7 +264,6 @@ function HomeContent() {
   const [editDraft, setEditDraft] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const suggestionsLoaded = useRef(false);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -322,7 +321,7 @@ function HomeContent() {
 
   // Load suggestions from API when language changes
   useEffect(() => {
-    suggestionsLoaded.current = false;
+    let cancelled = false;
 
     const loadSuggestions = async () => {
       try {
@@ -348,6 +347,8 @@ function HomeContent() {
           ? data.suggestions.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
           : [];
 
+        if (cancelled) return;
+
         if (nextSuggestions.length > 0) {
           // Push API suggestions to the end of local suggestions
           setLocalSuggestions((prev) => {
@@ -370,12 +371,15 @@ function HomeContent() {
 
         throw new Error("Suggestions payload was empty");
       } catch (error) {
+        if (cancelled) return;
         console.error("Failed to load suggestions:", error);
         setSuggestions([]);
       }
     };
 
     void loadSuggestions();
+
+    return () => { cancelled = true; };
   }, [language]);
 
   // Close settings menu when clicking outside
