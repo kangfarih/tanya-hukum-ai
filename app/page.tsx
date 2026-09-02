@@ -865,7 +865,7 @@ function HomeContent() {
           )}
         </div>
 
-        <form className={`fixed bottom-0 left-0 right-0 z-10 flex items-center gap-2 border-t border-zinc-200 bg-white px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950 lg:left-72 ${isEmpty ? 'justify-center' : 'justify-start'}`} onSubmit={handleSubmit}>
+        <form className={`fixed bottom-0 left-0 right-0 z-10 flex flex-col gap-1 border-t border-zinc-200 bg-white px-4 py-4 dark:border-zinc-800 dark:bg-zinc-950 lg:left-72 ${isEmpty ? 'items-center' : 'items-start'}`} onSubmit={handleSubmit}>
           <div className={`flex w-full items-center gap-2 ${isEmpty ? "max-w-2xl" : ""}`}>
             <input
               value={input}
@@ -895,7 +895,7 @@ function HomeContent() {
               </button>
             )}
           </div>
-          <p className="mt-2 text-center text-[11px] text-zinc-400 dark:text-zinc-500 lg:left-72">
+          <p className="w-full text-center text-[11px] text-zinc-400 dark:text-zinc-500">
             Jawaban bersifat referensi. Selalu verifikasi dengan sumber resmi atau konsultasikan dengan ahli hukum.
           </p>
         </form>
