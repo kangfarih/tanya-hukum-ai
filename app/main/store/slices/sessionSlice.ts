@@ -212,12 +212,8 @@ const sessionSlice = createSlice({
 
     hydrateSessions: (state, action: PayloadAction<Record<string, ChatSession>>) => {
       state.sessions = action.payload;
-      if (!state.activeSessionId || !state.sessions[state.activeSessionId]) {
-        const sessions = Object.values(state.sessions).sort(
-          (a, b) => b.updatedAt - a.updatedAt
-        );
-        state.activeSessionId = sessions[0]?.id ?? null;
-      }
+      // Always start in new chat mode (activeSessionId = null)
+      state.activeSessionId = null;
     },
   },
 });
